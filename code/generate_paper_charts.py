@@ -103,7 +103,7 @@ def plot_performance_gap():
 from matplotlib.lines import Line2D 
 
 def plot_efficiency_tradeoff():
-    # Increased height further (9x9) to ensure ample vertical space
+    # Keep the square-ish aspect ratio
     plt.figure(figsize=(9, 9))
     
     # Focus only on Non-IID scenarios
@@ -162,13 +162,14 @@ def plot_efficiency_tradeoff():
                markerfacecolor='gray', markersize=12, markeredgecolor='k')
     ]
 
-    # --- DEFINITIVE LAYOUT FIX ---
-    # 1. Move legends UP closer to axis title (y = -0.14)
-    # 2. Increase bottom margin significantly (bottom = 0.35)
+    # --- FINAL FIX FOR CLIPPING ---
+    # We keep the position (y=-0.15) since you liked the proximity to the axis.
+    # But we drastically increase the bottom margin to 0.45 to ensure the canvas
+    # is large enough to hold the full legend.
     
     # Add Legend 1: MODEL (Left side)
     leg1 = plt.legend(handles=legend_elements_model, title="Model", 
-                      loc='upper center', bbox_to_anchor=(0.35, -0.14), 
+                      loc='upper center', bbox_to_anchor=(0.35, -0.15), 
                       ncol=1, frameon=True, fancybox=True, shadow=False)
     leg1.get_title().set_fontweight('bold')
     leg1.get_title().set_fontsize(12)
@@ -177,13 +178,14 @@ def plot_efficiency_tradeoff():
 
     # Add Legend 2: STRATEGY (Right side)
     leg2 = plt.legend(handles=legend_elements_strategy, title="Strategy", 
-                      loc='upper center', bbox_to_anchor=(0.65, -0.14), 
+                      loc='upper center', bbox_to_anchor=(0.65, -0.15), 
                       ncol=1, frameon=True, fancybox=True, shadow=False)
     leg2.get_title().set_fontweight('bold')
     leg2.get_title().set_fontsize(12)
 
-    # Set bottom margin to 0.35 (Generous space to prevent clipping)
-    plt.subplots_adjust(bottom=0.35)
+    # Set bottom margin to 0.45 (Very large footer to prevent ANY clipping)
+    # The bbox_inches='tight' will trim the excess whitespace later.
+    plt.subplots_adjust(bottom=0.45)
     
     # Save with tight bounding box
     fig_eff = os.path.join(results_dir, 'paper_fig2_efficiency_v3.png')
