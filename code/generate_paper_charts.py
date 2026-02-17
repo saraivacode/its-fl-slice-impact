@@ -103,20 +103,20 @@ def plot_performance_gap():
 from matplotlib.lines import Line2D 
 
 def plot_efficiency_tradeoff():
-    plt.figure(figsize=(9, 7))
+    # Increased figure height to provide more vertical breathing room
+    plt.figure(figsize=(9, 8))
     
     # Focus only on Non-IID scenarios
     fed_df = df[df['Dist'] == 'NONIID'].copy()
     
-    # 1. Define explicit colors to ensure consistency between plot and legend
-    # (Colors extracted from Viridis palette for professional look)
+    # 1. Define explicit colors
     model_colors = {
         'DNN': '#440154',  # Dark Purple
         'LSTM': '#21918c', # Teal
         'GRU': '#5ec962'   # Light Green
     }
     
-    # 2. Plot without automatic legend (legend=False)
+    # 2. Plot without automatic legend
     ax = sns.scatterplot(
         data=fed_df, 
         x='Total', 
@@ -124,10 +124,10 @@ def plot_efficiency_tradeoff():
         hue='Model', 
         style='Strategy', 
         s=250, 
-        palette=model_colors, # Use fixed color dictionary
+        palette=model_colors, 
         markers={'FEDAVG': 'o', 'FEDPROX': 'X'},
         edgecolor='black',
-        legend=False # Disable messy automatic legend
+        legend=False 
     )
     
     # 3. Annotate points
@@ -141,10 +141,10 @@ def plot_efficiency_tradeoff():
     plt.grid(True, linestyle='--', alpha=0.5)
 
     # =================================================================
-    # MANUAL LEGEND CONSTRUCTION (For alignment and aesthetics)
+    # MANUAL LEGEND CONSTRUCTION
     # =================================================================
     
-    # Create MODEL legend elements (Colors)
+    # Create MODEL legend elements
     legend_elements_model = [
         Line2D([0], [0], marker='o', color='w', label='DNN',
                markerfacecolor=model_colors['DNN'], markersize=12, markeredgecolor='k'),
@@ -154,7 +154,7 @@ def plot_efficiency_tradeoff():
                markerfacecolor=model_colors['GRU'], markersize=12, markeredgecolor='k')
     ]
     
-    # Create STRATEGY legend elements (Markers)
+    # Create STRATEGY legend elements
     legend_elements_strategy = [
         Line2D([0], [0], marker='o', color='w', label='FedAvg',
                markerfacecolor='gray', markersize=12, markeredgecolor='k'),
@@ -162,27 +162,30 @@ def plot_efficiency_tradeoff():
                markerfacecolor='gray', markersize=12, markeredgecolor='k')
     ]
 
+    # --- CRITICAL LAYOUT ADJUSTMENT ---
+    # Changed loc to 'upper center' (anchor by the top of the box)
+    # Adjusted bbox_to_anchor to y=-0.25 (well below the X-axis label)
+    
     # Add Legend 1: MODEL (Left side)
     leg1 = plt.legend(handles=legend_elements_model, title="Model", 
-                      loc='lower center', bbox_to_anchor=(0.35, -0.25), 
+                      loc='upper center', bbox_to_anchor=(0.35, -0.25), 
                       ncol=1, frameon=True, fancybox=True, shadow=False)
     leg1.get_title().set_fontweight('bold')
     leg1.get_title().set_fontsize(12)
     
-    # Add the first legend to Axes (otherwise the second one overwrites it)
     plt.gca().add_artist(leg1)
 
     # Add Legend 2: STRATEGY (Right side)
     leg2 = plt.legend(handles=legend_elements_strategy, title="Strategy", 
-                      loc='lower center', bbox_to_anchor=(0.65, -0.21), 
+                      loc='upper center', bbox_to_anchor=(0.65, -0.25), 
                       ncol=1, frameon=True, fancybox=True, shadow=False)
     leg2.get_title().set_fontweight('bold')
     leg2.get_title().set_fontsize(12)
 
-    # Layout adjustment to fit legends
-    plt.subplots_adjust(bottom=0.25)
+    # Increased bottom margin (bottom=0.35) to strictly fit legends without overlap
+    plt.subplots_adjust(bottom=0.35)
     
-    # Save with bbox_inches='tight' to ensure nothing is clipped
+    # Save with tight bounding box
     fig_eff = os.path.join(results_dir, 'paper_fig2_efficiency_v3.png')
     plt.savefig(fig_eff, dpi=300, bbox_inches='tight')
     plt.show()
