@@ -1,105 +1,171 @@
-# its-fl-slice-impact
+# Federated Learning for ITS Network Slice Impact Classification
 
-[![Python 3.8+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
+[![Python 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/downloads/)
+[![TensorFlow 2.x](https://img.shields.io/badge/TensorFlow-2.x-orange.svg)](https://www.tensorflow.org/)
+[![Flower 1.x](https://img.shields.io/badge/Flower-1.x-green.svg)](https://flower.dev/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-**Federated Learning for Scalable Network Slice Impact Classification in ITS**
+---
 
-This repository contains the implementation and experimental framework for a distributed intelligence layer designed to support proactive Network Slice (NS) management in Intelligent Transportation Systems (ITS). The project leverages **Federated Learning (FL)** to enable collaborative model training across geographically distributed edge nodes while preserving data privacy and addressing scalability challenges in vehicular environments.
+## Overview
+
+This repository implements a federated learning framework that classifies the impact level of network slicing policies on ITS applications. The system embeds distributed impact classification as an intelligence layer across the network slice lifecycle (Prepare → Commissioning → Operation → Decommissioning).
+
+Local controllers at Roadside Units (RSUs) train models on edge monitoring data and transmit only model updates to a central aggregator — no raw data leaves the edge. The classifier maps multidimensional monitoring signals (RTT, PDR, temporal derivatives) into three actionable impact levels (**Low**, **Medium**, **High**) to trigger graduated management responses.
+
+### Key Findings
+
+- **IID scenarios**: Federated training matches centralized performance (Macro F1 > 0.97), converging to 90% accuracy within the first communication round.
+- **Non-IID scenarios**: Accuracy drops ~20 pp across all architectures due to spatial–temporal heterogeneity inherent to vehicular corridors.
+- **FedProx (µ=0.1) vs FedAvg**: No statistically meaningful gain (≤0.19 pp), indicating standard proximal regularization is insufficient for the observed degree of heterogeneity.
+- **Convergence**: Learning stabilizes within 2–3 rounds under Non-IID, yielding a usable global model with limited backhaul.
 
 ---
 
-## 📖 Overview
+## Repository Structure
 
-Managing network slices in highly dynamic ITS environments requires proactive Quality-of-Service (QoS) monitoring and accurate policy impact assessment. This framework integrates distributed impact classification into the network slice lifecycle:
-
-* **Distributed Intelligence**: Local Controllers (LCs) co-located with Roadside Units (RSUs) operate as federated clients, training models on localized edge monitoring data.
-* **Privacy-Preserving**: Only model updates (weights or gradients) are transmitted to a central aggregator, ensuring sensitive vehicular data remains on the edge.
-* **Impact-Aware Management**: The system interprets multidimensional monitoring data and maps it to discrete impact levels (Low, Medium, High) to trigger graduated management responses.
-* **Lifecycle Support**: Provides intelligence for decision-making across the Preparation, Commissioning, Operation, and Decommissioning phases of a network slice.
+```
+its-fl-slice-impact/
+├── code/
+│   ├── federatedLearning_ITS.py      # Main experiment orchestrator (985 lines)
+│   └── generate_paper_charts.py      # Publication-ready figure generation
+├── data/
+│   └── raw_full.csv                  # Dataset (5,093 samples, 28 features)
+├── results/
+│   └── v1/
+│       ├── paper_artifacts/          # Summary tables, per-experiment JSONs, charts
+│       └── client_logs/              # Per-client per-round training metrics
+├── requirements.txt
+└── README.md
+```
 
 ---
 
-## 🛠️ Prerequisites
+## Experiment Matrix
 
-* **Python 3.10+**
-* **Dependencies from `requirements.txt`**:  TensorFlow 2.x, Flower (FL framework), pandas, scikit-learn, matplotlib, etc.
+15 experiments: 12 federated (3 models × 2 distributions × 2 strategies) + 3 centralized baselines.
+
+| # | Model | Distribution | Strategy | Rounds | Local Epochs |
+|---|-------|-------------|----------|--------|--------------|
+| 1–4 | DNN | IID / Non-IID | FedAvg / FedProx | 10 | 5 |
+| 5–8 | LSTM | IID / Non-IID | FedAvg / FedProx | 10 | 5 |
+| 9–12 | GRU | IID / Non-IID | FedAvg / FedProx | 10 | 5 |
+| 13–15 | DNN / LSTM / GRU | Centralized | — | — | 30 (early stop, patience=5) |
+
+### Non-IID Data Allocation
+
+The class-conditional partitioning reflects progressive congestion along the corridor:
+
+| Impact Level | RSU 0 (downstream) | RSU 1 (middle) | RSU 2 (entry) |
+|---|---|---|---|
+| Low | 15% | 30% | 55% |
+| Medium | 25% | 50% | 25% |
+| High | 55% | 25% | 20% |
+
+---
+
+## Prerequisites
+
+- **Python 3.12** (developed and tested on 3.12.12)
+- GPU recommended (experiments ran on Tesla T4 via Google Colab)
 
 ### Installation
 
-Install the packages in a virtual environment:
-
 ```bash
+git clone https://github.com/saraivacode/its-fl-slice-impact.git
+cd its-fl-slice-impact
 python -m venv .venv
-source .venv/bin/activate
+source .venv/bin/activate   # Linux/Mac
 pip install -r requirements.txt
 ```
 
+### Dependencies
+
+- `flwr` (Flower) — Federated learning framework
+- `tensorflow` / `keras` — Neural network models
+- `pandas`, `numpy` — Data processing
+- `scikit-learn` — Metrics and preprocessing
+- `matplotlib`, `seaborn` — Visualization
+
 ---
 
-## 🚀 Running the Experiments
-The core engine is code/federatedLearning_ITS.py, which orchestrates 15 distinct experiments covering multiple neural architectures (DNN, LSTM, GRU) and aggregation strategies (FedAvg, FedProx).
+## Usage
 
-### 1. Execute the Simulation
-**Full Experimental Campaign** (~1.5–2h): Runs the complete matrix across IID and Non-IID data distributions.
+### Full Experiment Suite
 
-  ```bash
-  python code/federatedLearning_ITS.py
-  ```
-
-**Quick Validation** (~20–30 min): Runs a reduced subset of experiments for testing purposes.
-- **Quick run** (~20–30 min, reduced subset):
-  ```bash
-  python code/federatedLearning_ITS.py --quick
-  ```
-
-### 2. Generate Visualizations
-Once the results are populated in `results/v1/paper_artifacts/`, run `code/generate_paper_charts.py` once `results/v1/paper_artifacts` is populated::
+Runs all 15 experiments with deterministic seeding (seed=42):
 
 ```bash
-python code/generate_paper_charts.py
+cd code
+python federatedLearning_ITS.py
 ```
+
+### Quick Validation
+
+Runs a reduced subset (DNN only, 3 federated + 1 centralized) for environment testing:
+
+```bash
+cd code
+python federatedLearning_ITS.py --quick
+```
+
+### Generate Publication Figures
+
+After results are available in `results/v1/paper_artifacts/`:
+
+```bash
+cd code
+python generate_paper_charts.py
+```
+
+Produces the four figures used in the paper: performance gap (IID vs Non-IID), efficiency trade-off, convergence analysis, and strategy comparison.
 
 ---
 
 ## Outputs
-- Results are saved to `results/<version>/paper_artifacts/`.
-- Summaries in CSV/TeX (`summary_table.csv`, `summary_table.tex`) and per-experiment JSONs.
-- Convergence and comparison plots are stored in the same directory.
 
-## 📂 Repository Structure
-* `code/federatedLearning_ITS.py`: Main orchestrator for federated and centralized training.
+Results are saved to `results/v1/paper_artifacts/`:
 
-* `code/generate_paper_charts.py`: Visualization suite for processing JSON/CSV logs into publication-ready figures (builds charts from `summary_table.csv`).
-
-* `data/raw_full.csv`: Dataset containing 5,093 network performance samples across four application types: Safety, Efficiency, Entertainment, and Generic.
-
-* `results/`: Directory for generated TeX tables, CSV summaries, and PNG/EPS figures.
+| File | Description |
+|---|---|
+| `summary_table.csv` | Comparative results across all 15 experiments |
+| `summary_table.tex` | LaTeX-formatted table (paper Table IV) |
+| `centralized_results.json` | Centralized baseline metrics per model |
+| `<model>_<dist>_<strategy>_e5.json` | Per-experiment results with round-by-round metrics |
+| `paper_fig*.png` | Publication-ready figures |
+| `client_logs/` | Per-client per-round training metrics |
 
 ---
 
-## 📊 Key Findings
-* **IID Performance**: Achieves a Macro F1-score exceeding **0.97**, matching centralized baselines without data centralization.
+## Reproducibility
 
-* **Convergence Efficiency**: Demonstrates rapid learning, reaching near-final accuracy within **2 to 3 communication rounds**.
+All random number generators are seeded deterministically:
+- Global seed: `42`
+- Client-specific seeds: `42 + client_id`
+- Stratified 80/20 train/test split
 
-* **Statistical Heterogeneity**: Quantifies the impact of Non-IID data, where **FedProx** provides superior stability compared to standard FedAvg.
+The FedProx implementation uses a post-epoch weight correction as a practical approximation of the proximal term, leveraging Flower's built-in `FedProx` strategy with `proximal_mu=0.1`.
+
+---
+
+## Dataset
+
+The dataset (`data/raw_full.csv`) contains 5,093 network performance samples from the ITS emulation scenario in:
+
+> T. do Vale Saraiva *et al.*, "An Application-Driven Framework for Intelligent Transportation Systems Using 5G Network Slicing," *IEEE Trans. Intell. Transp. Syst.*, vol. 22, no. 8, pp. 5247–5260, Aug. 2021.
+
+**Scenario**: 650 m urban corridor, 3 RSUs, up to 17 vehicles, 4 application types (Safety, Efficiency, Entertainment, Generic), 3 slicing strategies (Flat Network, Queue-based, Full Slicing).
+
+**Features**: 28 engineered features including RTT, PDR, broadcast RTT, temporal derivatives (change rates, moving averages, statistical moments).
+
+**Target**: Impact level — Low (1,883), Medium (2,004), High (1,206).
+
+---
 
 ## License
 
 This project is licensed under the MIT License.
 
-## Acknowledgments
-
-- Federal University of State of Rio de Janeiro (UNIRIO)
-- Dataset based on [saraivacode/framework_its_sdn](https://github.com/saraivacode/framework_its_sdn), which uses:
-  - [Mininet-WiFi Emulator](https://github.com/intrig-unicamp/mininet-wifi)
-  - [Ryu SDN Controller](https://osrg.github.io/ryu/)
-  - [SUMO Mobility Simulator](https://sumo.dlr.de/docs/Installing.html)
-
-
 ## Contact
 
 - **Tiago do Vale Saraiva** - [tiago.saraiva@uniriotec.br](mailto:tiago.saraiva@uniriotec.br)
-
-
