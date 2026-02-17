@@ -132,7 +132,7 @@ def plot_efficiency_tradeoff():
 
     plt.subplots_adjust(bottom=0.2)
     fig_eff = os.path.join(results_dir, 'paper_fig2_efficiency_v3.png')
-    plt.savefig(fig_eff, dpi=300)
+    plt.savefig(fig_eff, dpi=300, bbox_inches='tight')
     plt.show()
     
     print(f"Chart 2 saved as {fig_eff}")
