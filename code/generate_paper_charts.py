@@ -100,37 +100,89 @@ def plot_performance_gap():
 # CHART 2: EFFICIENCY TRADE-OFF (SCATTER)
 # Visualizes Cost vs Benefit
 # ==========================================
+from matplotlib.lines import Line2D 
+
 def plot_efficiency_tradeoff():
     plt.figure(figsize=(9, 7))
     
-    # Focus only on Non-IID scenarios (The real-world challenge)
+    # Focus only on Non-IID scenarios
     fed_df = df[df['Dist'] == 'NONIID'].copy()
     
-    sns.scatterplot(
+    # 1. Define explicit colors to ensure consistency between plot and legend
+    # (Colors extracted from Viridis palette for professional look)
+    model_colors = {
+        'DNN': '#440154',  # Dark Purple
+        'LSTM': '#21918c', # Teal
+        'GRU': '#5ec962'   # Light Green
+    }
+    
+    # 2. Plot without automatic legend (legend=False)
+    ax = sns.scatterplot(
         data=fed_df, 
         x='Total', 
         y='Acc', 
         hue='Model', 
         style='Strategy', 
-        s=250, # Marker size
-        palette='viridis', 
+        s=250, 
+        palette=model_colors, # Use fixed color dictionary
         markers={'FEDAVG': 'o', 'FEDPROX': 'X'},
-        edgecolor='black'
+        edgecolor='black',
+        legend=False # Disable messy automatic legend
     )
     
-    # Annotate points with model names
+    # 3. Annotate points
     for i in range(fed_df.shape[0]):
         row = fed_df.iloc[i]
         plt.text(row['Total']+0.8, row['Acc'], f"{row['Model']}", fontsize=10, weight='semibold')
 
-    plt.title('Efficiency Trade-off (Non-IID)', fontweight='bold')
-    plt.xlabel('Total Training Time (s)')
-    plt.ylabel('Accuracy')
+    plt.title('Efficiency Trade-off (Non-IID)', fontweight='bold', fontsize=16)
+    plt.xlabel('Total Training Time (s)', fontsize=14)
+    plt.ylabel('Accuracy', fontsize=14)
     plt.grid(True, linestyle='--', alpha=0.5)
-    plt.legend(loc='upper center', bbox_to_anchor=(0.5, -0.15),
-               fancybox=True, shadow=False, ncol=3)
 
-    plt.subplots_adjust(bottom=0.2)
+    # =================================================================
+    # MANUAL LEGEND CONSTRUCTION (For alignment and aesthetics)
+    # =================================================================
+    
+    # Create MODEL legend elements (Colors)
+    legend_elements_model = [
+        Line2D([0], [0], marker='o', color='w', label='DNN',
+               markerfacecolor=model_colors['DNN'], markersize=12, markeredgecolor='k'),
+        Line2D([0], [0], marker='o', color='w', label='LSTM',
+               markerfacecolor=model_colors['LSTM'], markersize=12, markeredgecolor='k'),
+        Line2D([0], [0], marker='o', color='w', label='GRU',
+               markerfacecolor=model_colors['GRU'], markersize=12, markeredgecolor='k')
+    ]
+    
+    # Create STRATEGY legend elements (Markers)
+    legend_elements_strategy = [
+        Line2D([0], [0], marker='o', color='w', label='FedAvg',
+               markerfacecolor='gray', markersize=12, markeredgecolor='k'),
+        Line2D([0], [0], marker='X', color='w', label='FedProx',
+               markerfacecolor='gray', markersize=12, markeredgecolor='k')
+    ]
+
+    # Add Legend 1: MODEL (Left side)
+    leg1 = plt.legend(handles=legend_elements_model, title="Model", 
+                      loc='lower center', bbox_to_anchor=(0.35, -0.25), 
+                      ncol=1, frameon=True, fancybox=True, shadow=False)
+    leg1.get_title().set_fontweight('bold')
+    leg1.get_title().set_fontsize(12)
+    
+    # Add the first legend to Axes (otherwise the second one overwrites it)
+    plt.gca().add_artist(leg1)
+
+    # Add Legend 2: STRATEGY (Right side)
+    leg2 = plt.legend(handles=legend_elements_strategy, title="Strategy", 
+                      loc='lower center', bbox_to_anchor=(0.65, -0.21), 
+                      ncol=1, frameon=True, fancybox=True, shadow=False)
+    leg2.get_title().set_fontweight('bold')
+    leg2.get_title().set_fontsize(12)
+
+    # Layout adjustment to fit legends
+    plt.subplots_adjust(bottom=0.25)
+    
+    # Save with bbox_inches='tight' to ensure nothing is clipped
     fig_eff = os.path.join(results_dir, 'paper_fig2_efficiency_v3.png')
     plt.savefig(fig_eff, dpi=300, bbox_inches='tight')
     plt.show()
