@@ -143,6 +143,8 @@ from sklearn.metrics import precision_score, recall_score, f1_score
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 
+from keras.callbacks import EarlyStopping
+
 os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
 
 # =============================================================================
@@ -556,8 +558,10 @@ def run_centralized_training(model_type: str, num_epochs: int = 30, data_path: s
         X_test = X_test.reshape((X_test.shape[0], 1, X_test.shape[1]))
     
     start = time.time()
+
+    es = EarlyStopping(monitor='val_loss', patience=5, restore_best_weights=True, verbose=1)
     history = model.fit(X_train, y_train, epochs=num_epochs, batch_size=32,
-                       validation_data=(X_test, y_test), verbose=1)
+                       validation_data=(X_test, y_test), callbacks=[es], verbose=1)
     total_time = time.time() - start
     
     preds = np.argmax(model.predict(X_test, verbose=0), axis=1)
