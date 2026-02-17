@@ -129,6 +129,7 @@ def plot_efficiency_tradeoff():
     ax.set_xlabel('Total Training Time (s)', fontsize=14)
     ax.set_ylabel('Accuracy', fontsize=14)
     ax.grid(True, linestyle='--', alpha=0.5)
+    ax.margins(x=0.08) 
 
     legend_elements_model = [
         Line2D([0], [0], marker='o', color='w', label='DNN',
@@ -159,7 +160,6 @@ def plot_efficiency_tradeoff():
     leg2.get_title().set_fontweight('bold')
     leg2.get_title().set_fontsize(12)
 
-    # ← Essa é a linha-chave: passa as legendas explicitamente
     fig_eff = os.path.join(results_dir, 'paper_fig2_efficiency_v3.png')
     fig.savefig(fig_eff, dpi=300, bbox_inches='tight', 
                 bbox_extra_artists=(leg1, leg2))
