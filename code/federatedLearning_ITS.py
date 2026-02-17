@@ -13,7 +13,7 @@ EXPERIMENTAL CONTEXT
 
 The dataset was collected from a simulation/emulation environment featuring:
 - 3 RSUs (Road Side Units) covering a 650m urban corridor
-- Up to 15-17 vehicles simultaneously competing for network resources
+- Up to 17 vehicles simultaneously competing for network resources
 - 4 ITS application types: Safety (S), Efficiency (E), Entertainment (E2), Generic (G)
 - 3 network slicing strategies: FN (no QoS), FQ (queue-based QoS), FS (full slicing)
 
