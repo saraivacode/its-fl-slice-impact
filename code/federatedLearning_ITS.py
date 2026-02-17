@@ -342,7 +342,7 @@ def _prepare_features_labels(client_data: pd.DataFrame, client_id: int):
     print(f"  RSU {client_id}: {len(X_train)} train, {len(X_test)} test | "
           f"Impact: L={dist.get(0,0)} M={dist.get(1,0)} H={dist.get(2,0)}")
     
-    # CRITICAL: Return in order that matches ITSRsuClient constructor!
+    # Return in order that matches ITSRsuClient constructor
     # Constructor: (config, X_train, y_train, X_test, y_test, client_id)
     return X_train, y_train, X_test, y_test
 
@@ -394,8 +394,8 @@ class ITSRsuClient(fl.client.NumPyClient):
     """
     Flower client for ITS RSU.
     
-    IMPORTANT: Constructor parameter order is (config, X_train, y_train, X_test, y_test, client_id)
-    This must match the order returned by _prepare_features_labels!
+    Constructor parameter order is (config, X_train, y_train, X_test, y_test, client_id)
+    This must match the order returned by _prepare_features_labels.
     """
     
     def __init__(self, config: ExperimentConfig, X_train, y_train, X_test, y_test, client_id: int, log_dir: str):
