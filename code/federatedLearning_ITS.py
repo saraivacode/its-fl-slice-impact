@@ -64,10 +64,10 @@ network slice lifecycle due to progressive application of slicing policies.
 USAGE
 ================================================================================
 
-Full experiment suite (~1.5-2 hours):
+Full experiment suite:
     python federatedLearning_ITS.py
 
-Quick test run (~20-30 minutes):
+Quick test run:
     python federatedLearning_ITS.py --quick
 
 ================================================================================
