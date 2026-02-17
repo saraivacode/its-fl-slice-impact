@@ -100,51 +100,36 @@ def plot_performance_gap():
 # CHART 2: EFFICIENCY TRADE-OFF (SCATTER)
 # Visualizes Cost vs Benefit
 # ==========================================
-from matplotlib.lines import Line2D 
+from matplotlib.lines import Line2D
 
 def plot_efficiency_tradeoff():
-    # Keep the square-ish aspect ratio
-    plt.figure(figsize=(9, 9))
+    fig, ax = plt.subplots(figsize=(9, 7))  # volta ao 9x7, não precisa de 9x9
     
-    # Focus only on Non-IID scenarios
     fed_df = df[df['Dist'] == 'NONIID'].copy()
     
-    # 1. Define explicit colors
     model_colors = {
-        'DNN': '#440154',  # Dark Purple
-        'LSTM': '#21918c', # Teal
-        'GRU': '#5ec962'   # Light Green
+        'DNN': '#440154',
+        'LSTM': '#21918c',
+        'GRU': '#5ec962'
     }
     
-    # 2. Plot without automatic legend
-    ax = sns.scatterplot(
-        data=fed_df, 
-        x='Total', 
-        y='Acc', 
-        hue='Model', 
-        style='Strategy', 
-        s=250, 
+    sns.scatterplot(
+        data=fed_df, x='Total', y='Acc', 
+        hue='Model', style='Strategy', s=250, 
         palette=model_colors, 
         markers={'FEDAVG': 'o', 'FEDPROX': 'X'},
-        edgecolor='black',
-        legend=False 
+        edgecolor='black', legend=False, ax=ax
     )
     
-    # 3. Annotate points
     for i in range(fed_df.shape[0]):
         row = fed_df.iloc[i]
-        plt.text(row['Total']+0.8, row['Acc'], f"{row['Model']}", fontsize=10, weight='semibold')
+        ax.text(row['Total']+0.8, row['Acc'], f"{row['Model']}", fontsize=10, weight='semibold')
 
-    plt.title('Efficiency Trade-off (Non-IID)', fontweight='bold', fontsize=16)
-    plt.xlabel('Total Training Time (s)', fontsize=14)
-    plt.ylabel('Accuracy', fontsize=14)
-    plt.grid(True, linestyle='--', alpha=0.5)
+    ax.set_title('Efficiency Trade-off (Non-IID)', fontweight='bold', fontsize=16)
+    ax.set_xlabel('Total Training Time (s)', fontsize=14)
+    ax.set_ylabel('Accuracy', fontsize=14)
+    ax.grid(True, linestyle='--', alpha=0.5)
 
-    # =================================================================
-    # MANUAL LEGEND CONSTRUCTION
-    # =================================================================
-    
-    # Create MODEL legend elements
     legend_elements_model = [
         Line2D([0], [0], marker='o', color='w', label='DNN',
                markerfacecolor=model_colors['DNN'], markersize=12, markeredgecolor='k'),
@@ -154,7 +139,6 @@ def plot_efficiency_tradeoff():
                markerfacecolor=model_colors['GRU'], markersize=12, markeredgecolor='k')
     ]
     
-    # Create STRATEGY legend elements
     legend_elements_strategy = [
         Line2D([0], [0], marker='o', color='w', label='FedAvg',
                markerfacecolor='gray', markersize=12, markeredgecolor='k'),
@@ -162,34 +146,23 @@ def plot_efficiency_tradeoff():
                markerfacecolor='gray', markersize=12, markeredgecolor='k')
     ]
 
-    # --- FINAL FIX FOR CLIPPING ---
-    # We keep the position (y=-0.15) since you liked the proximity to the axis.
-    # But we drastically increase the bottom margin to 0.45 to ensure the canvas
-    # is large enough to hold the full legend.
-    
-    # Add Legend 1: MODEL (Left side)
-    leg1 = plt.legend(handles=legend_elements_model, title="Model", 
-                      loc='upper center', bbox_to_anchor=(0.35, -0.15), 
-                      ncol=1, frameon=True, fancybox=True, shadow=False)
+    leg1 = ax.legend(handles=legend_elements_model, title="Model", 
+                     loc='upper center', bbox_to_anchor=(0.35, -0.12), 
+                     ncol=1, frameon=True, fancybox=True)
     leg1.get_title().set_fontweight('bold')
     leg1.get_title().set_fontsize(12)
-    
-    plt.gca().add_artist(leg1)
+    ax.add_artist(leg1)
 
-    # Add Legend 2: STRATEGY (Right side)
-    leg2 = plt.legend(handles=legend_elements_strategy, title="Strategy", 
-                      loc='upper center', bbox_to_anchor=(0.65, -0.15), 
-                      ncol=1, frameon=True, fancybox=True, shadow=False)
+    leg2 = ax.legend(handles=legend_elements_strategy, title="Strategy", 
+                     loc='upper center', bbox_to_anchor=(0.65, -0.12), 
+                     ncol=1, frameon=True, fancybox=True)
     leg2.get_title().set_fontweight('bold')
     leg2.get_title().set_fontsize(12)
 
-    # Set bottom margin to 0.45 (Very large footer to prevent ANY clipping)
-    # The bbox_inches='tight' will trim the excess whitespace later.
-    plt.subplots_adjust(bottom=0.45)
-    
-    # Save with tight bounding box
+    # ← Essa é a linha-chave: passa as legendas explicitamente
     fig_eff = os.path.join(results_dir, 'paper_fig2_efficiency_v3.png')
-    plt.savefig(fig_eff, dpi=300, bbox_inches='tight')
+    fig.savefig(fig_eff, dpi=300, bbox_inches='tight', 
+                bbox_extra_artists=(leg1, leg2))
     plt.show()
     
     print(f"Chart 2 saved as {fig_eff}")
