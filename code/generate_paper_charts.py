@@ -103,7 +103,7 @@ def plot_performance_gap():
 from matplotlib.lines import Line2D 
 
 def plot_efficiency_tradeoff():
-    # Increased figure height to provide more vertical breathing room
+    # Figure size optimized for aspect ratio
     plt.figure(figsize=(9, 8))
     
     # Focus only on Non-IID scenarios
@@ -162,13 +162,12 @@ def plot_efficiency_tradeoff():
                markerfacecolor='gray', markersize=12, markeredgecolor='k')
     ]
 
-    # --- CRITICAL LAYOUT ADJUSTMENT ---
-    # Changed loc to 'upper center' (anchor by the top of the box)
-    # Adjusted bbox_to_anchor to y=-0.25 (well below the X-axis label)
+    # --- FINE-TUNED LAYOUT ADJUSTMENT ---
+    # Moved y from -0.25 to -0.18 (Higher up, closer to axis label)
     
     # Add Legend 1: MODEL (Left side)
     leg1 = plt.legend(handles=legend_elements_model, title="Model", 
-                      loc='upper center', bbox_to_anchor=(0.35, -0.25), 
+                      loc='upper center', bbox_to_anchor=(0.35, -0.18), 
                       ncol=1, frameon=True, fancybox=True, shadow=False)
     leg1.get_title().set_fontweight('bold')
     leg1.get_title().set_fontsize(12)
@@ -177,13 +176,13 @@ def plot_efficiency_tradeoff():
 
     # Add Legend 2: STRATEGY (Right side)
     leg2 = plt.legend(handles=legend_elements_strategy, title="Strategy", 
-                      loc='upper center', bbox_to_anchor=(0.65, -0.25), 
+                      loc='upper center', bbox_to_anchor=(0.65, -0.18), 
                       ncol=1, frameon=True, fancybox=True, shadow=False)
     leg2.get_title().set_fontweight('bold')
     leg2.get_title().set_fontsize(12)
 
-    # Increased bottom margin (bottom=0.35) to strictly fit legends without overlap
-    plt.subplots_adjust(bottom=0.35)
+    # Set bottom margin to 0.30 (Balanced space)
+    plt.subplots_adjust(bottom=0.30)
     
     # Save with tight bounding box
     fig_eff = os.path.join(results_dir, 'paper_fig2_efficiency_v3.png')
