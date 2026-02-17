@@ -568,6 +568,7 @@ def run_centralized_training(model_type: str, num_epochs: int = 30, data_path: s
     
     results = {
         "model_type": model_type,
+        "epochs_trained": len(history.history['loss']),
         "accuracy": float(history.history['val_accuracy'][-1]),
         "precision": float(precision_score(y_test, preds, average='macro', zero_division=0)),
         "recall": float(recall_score(y_test, preds, average='macro', zero_division=0)),
