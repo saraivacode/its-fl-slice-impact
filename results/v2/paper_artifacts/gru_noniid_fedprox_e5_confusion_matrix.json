@@ -1,0 +1,25 @@
+{
+  "config": "gru_noniid_fedprox_e5",
+  "confusion_matrix": [
+    [
+      57,
+      0,
+      0
+    ],
+    [
+      39,
+      61,
+      0
+    ],
+    [
+      0,
+      72,
+      61
+    ]
+  ],
+  "labels": [
+    "Low",
+    "Medium",
+    "High"
+  ]
+}

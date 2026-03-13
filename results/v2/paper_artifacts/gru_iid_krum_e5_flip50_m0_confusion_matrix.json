@@ -1,0 +1,25 @@
+{
+  "config": "gru_iid_krum_e5_flip50_m0",
+  "confusion_matrix": [
+    [
+      366,
+      11,
+      0
+    ],
+    [
+      3,
+      387,
+      12
+    ],
+    [
+      1,
+      2,
+      238
+    ]
+  ],
+  "labels": [
+    "Low",
+    "Medium",
+    "High"
+  ]
+}

@@ -161,6 +161,13 @@ from keras.callbacks import EarlyStopping
 os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
 
 # =============================================================================
+# Paths
+# =============================================================================
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+_PROJECT_ROOT = os.path.dirname(_SCRIPT_DIR)
+DATA_PATH = os.path.join(_PROJECT_ROOT, "data", "raw_full.csv")
+
+# =============================================================================
 # Configuration
 # =============================================================================
 
@@ -252,7 +259,7 @@ def _normalize_labels(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def load_and_preprocess_data_iid(client_id: int, num_clients: int, data_path: str = '../data/raw_full.csv'):
+def load_and_preprocess_data_iid(client_id: int, num_clients: int, data_path: str = DATA_PATH):
     """Load data with IID distribution (random disjoint split)."""
     print(f"Loading IID data for RSU {client_id}...")
     df = pd.read_csv(data_path)
@@ -268,7 +275,7 @@ def load_and_preprocess_data_iid(client_id: int, num_clients: int, data_path: st
     return _prepare_features_labels(client_data, client_id)
 
 
-def load_and_preprocess_data_noniid(client_id: int, num_clients: int, data_path: str = '../data/raw_full.csv'):
+def load_and_preprocess_data_noniid(client_id: int, num_clients: int, data_path: str = DATA_PATH):
     """
     Load data with Non-IID distribution based on impact_level.
     Uses ALL data with no loss.
@@ -611,7 +618,7 @@ class ITSRsuClient(fl.client.NumPyClient):
 # Centralized Training
 # =============================================================================
 
-def run_centralized_training(model_type: str, num_epochs: int = 30, data_path: str = '../data/raw_full.csv'):
+def run_centralized_training(model_type: str, num_epochs: int = 30, data_path: str = DATA_PATH):
     """Centralized baseline."""
     print(f"\n{'='*50}\nCENTRALIZED: {model_type.upper()}\n{'='*50}")
     
