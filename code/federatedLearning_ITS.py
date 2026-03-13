@@ -33,6 +33,8 @@ Data Distribution:
 Aggregation Strategies:
     - FedAvg: Standard federated averaging with weighted aggregation
     - FedProx: Proximal regularization for improved Non-IID robustness (μ=0.1)
+    - Krum: Byzantine-robust aggregation (Blanchard et al., 2017)
+    - Trimmed Mean: Coordinate-wise trimmed average (Yin et al., 2018)
 
 Models:
     - DNN: Deep Neural Network (Dense layers with dropout)
@@ -44,6 +46,11 @@ Metrics:
     - Convergence: Rounds to reach 85%/90% accuracy thresholds
     - Stability: Standard deviation of accuracy over last 5 rounds
     - Efficiency: Total training time
+
+Security (Chapter 10):
+    - Label-flipping attack: High(2)->Low(0) directed poisoning
+    - Configurable attack fraction (20%, 50%) and malicious client selection
+    - Security metrics: H->L misclassification rate, confusion matrix, per-class metrics
 
 Baselines:
     - Centralized training for direct comparison with federated approaches
@@ -64,11 +71,17 @@ network slice lifecycle due to progressive application of slicing policies.
 USAGE
 ================================================================================
 
-Full experiment suite:
+Full experiment suite (Chapter 9):
     python federatedLearning_ITS.py
 
-Quick test run:
+Quick test run (Chapter 9):
     python federatedLearning_ITS.py --quick
+
+Security experiments (Chapter 10 - 24 configs):
+    python federatedLearning_ITS.py --security
+
+Security quick test (Chapter 10 - 4 configs):
+    python federatedLearning_ITS.py --security-quick
 
 ================================================================================
 OUTPUT
@@ -129,7 +142,7 @@ import multiprocessing
 import os
 import time
 from typing import List, Optional
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, field
 
 import flwr as fl
 import matplotlib.pyplot as plt
@@ -139,7 +152,7 @@ import tensorflow as tf
 from keras.layers import Dense, Input, LSTM, GRU, Dropout
 from keras.models import Sequential
 from keras.regularizers import l2
-from sklearn.metrics import precision_score, recall_score, f1_score
+from sklearn.metrics import precision_score, recall_score, f1_score, confusion_matrix as sk_confusion_matrix
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 
@@ -193,11 +206,19 @@ class ExperimentConfig:
     local_epochs: int
     batch_size: int
     distribution: str  # 'iid' or 'noniid'
-    strategy: str  # 'fedavg' or 'fedprox'
+    strategy: str  # 'fedavg', 'fedprox', 'krum', or 'trimmed_mean'
     fedprox_mu: float = 0.1
-    
+    attack_type: str = 'none'  # 'none' or 'label_flip'
+    attack_fraction: float = 0.0  # fraction of source_class labels to flip
+    malicious_clients: List[int] = field(default_factory=list)
+
     def to_string(self):
-        return f"{self.model_type}_{self.distribution}_{self.strategy}_e{self.local_epochs}"
+        base = f"{self.model_type}_{self.distribution}_{self.strategy}_e{self.local_epochs}"
+        if self.attack_type != 'none':
+            flip_pct = int(self.attack_fraction * 100)
+            mal_ids = ''.join(str(c) for c in sorted(self.malicious_clients))
+            base += f"_flip{flip_pct}_m{mal_ids}"
+        return base
 
 
 @dataclass
@@ -348,6 +369,47 @@ def _prepare_features_labels(client_data: pd.DataFrame, client_id: int):
 
 
 # =============================================================================
+# Poisoning Attack
+# =============================================================================
+
+def apply_label_flip_attack(y_train: np.ndarray, fraction: float,
+                            source_class: int = 2, target_class: int = 0,
+                            seed: int = 42) -> tuple:
+    """
+    Label-flipping attack: flip a fraction of source_class labels to target_class.
+
+    In the ITS context, High(2)->Low(0) flipping suppresses lifecycle decisions:
+    the model learns to classify degraded slices as adequate.
+
+    Returns (y_modified, num_flipped).
+    """
+    assert 0.0 < fraction <= 1.0, f"Fraction must be in (0, 1], got {fraction}"
+    y_modified = y_train.copy()
+
+    source_indices = np.where(y_modified == source_class)[0]
+    total_source = len(source_indices)
+
+    if total_source == 0:
+        print(f"  WARNING: No samples of class {source_class} to flip")
+        return y_modified, 0
+
+    rng = np.random.RandomState(seed)
+    num_to_flip = int(np.ceil(fraction * total_source))
+    flip_indices = rng.choice(source_indices, size=num_to_flip, replace=False)
+
+    y_modified[flip_indices] = target_class
+
+    # Assertions
+    actual_flipped = total_source - np.sum(y_modified == source_class)
+    assert actual_flipped == num_to_flip, \
+        f"Expected {num_to_flip} flips, got {actual_flipped}"
+    assert np.sum(y_modified == target_class) == np.sum(y_train == target_class) + num_to_flip, \
+        "Target class count mismatch after flipping"
+
+    return y_modified, num_to_flip
+
+
+# =============================================================================
 # Models
 # =============================================================================
 
@@ -493,20 +555,31 @@ class ITSRsuClient(fl.client.NumPyClient):
     def evaluate(self, parameters, config):
         self.current_round = config.get("round", self.current_round)
         self.model.set_weights(parameters)
-        
+
         X_test = self.X_test
         y_test = self.y_test
-        
+
         if self.config.model_type in ["lstm", "gru"]:
             X_test = X_test.reshape((X_test.shape[0], 1, X_test.shape[1]))
-        
+
         loss, acc = self.model.evaluate(X_test, y_test, verbose=0)
         preds = np.argmax(self.model.predict(X_test, verbose=0), axis=1)
-        
+
         prec = precision_score(y_test, preds, average='macro', zero_division=0)
         rec = recall_score(y_test, preds, average='macro', zero_division=0)
         f1 = f1_score(y_test, preds, average='macro', zero_division=0)
-        
+
+        # Confusion matrix and per-class metrics
+        cm = sk_confusion_matrix(y_test, preds, labels=[0, 1, 2])
+        per_class_prec = precision_score(y_test, preds, average=None, labels=[0, 1, 2], zero_division=0)
+        per_class_rec = recall_score(y_test, preds, average=None, labels=[0, 1, 2], zero_division=0)
+        per_class_f1 = f1_score(y_test, preds, average=None, labels=[0, 1, 2], zero_division=0)
+
+        # Security metric: High->Low misclassification rate
+        total_high = int(cm[2].sum())
+        high_to_low = int(cm[2][0]) if total_high > 0 else 0
+        high_to_low_rate = high_to_low / total_high if total_high > 0 else 0.0
+
         # Save eval metrics
         filename = f"{self.config.to_string()}_client_{self.client_id}_round_{self.current_round}_eval.json"
         filename = os.path.join(self.log_dir, filename)
@@ -515,12 +588,20 @@ class ITSRsuClient(fl.client.NumPyClient):
                 "round": self.current_round, "client_id": self.client_id,
                 "loss": float(loss), "accuracy": float(acc),
                 "precision": float(prec), "recall": float(rec), "f1": float(f1),
-                "dataset_size": len(self.X_test)
+                "dataset_size": len(self.X_test),
+                "confusion_matrix": cm.tolist(),
+                "per_class_precision": per_class_prec.tolist(),
+                "per_class_recall": per_class_rec.tolist(),
+                "per_class_f1": per_class_f1.tolist(),
+                "high_to_low_count": high_to_low,
+                "total_high": total_high,
+                "high_to_low_rate": float(high_to_low_rate),
             }, f)
-        
+
         return loss, len(self.X_test), {
             "accuracy": float(acc), "precision": float(prec),
-            "recall": float(rec), "f1": float(f1)
+            "recall": float(rec), "f1": float(f1),
+            "high_to_low_rate": float(high_to_low_rate),
         }
 
 
@@ -605,7 +686,18 @@ def start_client(config: ExperimentConfig, client_id: int, log_dir: str):
         # Validate before creating client
         assert len(X_train) == len(y_train), f"Client {client_id}: Train mismatch X={len(X_train)}, y={len(y_train)}"
         assert len(X_test) == len(y_test), f"Client {client_id}: Test mismatch X={len(X_test)}, y={len(y_test)}"
-        
+
+        # Apply poisoning attack if this client is malicious
+        if config.attack_type == 'label_flip' and client_id in config.malicious_clients:
+            high_before = int(np.sum(y_train == 2))
+            y_train, num_flipped = apply_label_flip_attack(
+                y_train, config.attack_fraction,
+                source_class=2, target_class=0,
+                seed=42 + client_id
+            )
+            print(f"  ATTACK: Client {client_id} flipped {num_flipped}/{high_before} "
+                  f"High->Low labels ({config.attack_fraction*100:.0f}%)")
+
         client = ITSRsuClient(config, X_train, y_train, X_test, y_test, client_id, log_dir)
         fl.client.start_numpy_client(server_address="127.0.0.1:8085", client=client)
     except Exception as e:
@@ -627,6 +719,23 @@ def start_server(config: ExperimentConfig):
             fit_metrics_aggregation_fn=weighted_average,
             evaluate_metrics_aggregation_fn=weighted_average,
             proximal_mu=config.fedprox_mu,
+        )
+    elif config.strategy == "krum":
+        strategy = fl.server.strategy.Krum(
+            min_fit_clients=config.num_clients,
+            min_available_clients=config.num_clients,
+            num_malicious_clients=len(config.malicious_clients),
+            num_clients_to_keep=0,  # classical Krum (select single best)
+            fit_metrics_aggregation_fn=weighted_average,
+            evaluate_metrics_aggregation_fn=weighted_average,
+        )
+    elif config.strategy == "trimmed_mean":
+        strategy = fl.server.strategy.FedTrimmedAvg(
+            min_fit_clients=config.num_clients,
+            min_available_clients=config.num_clients,
+            beta=0.2,
+            fit_metrics_aggregation_fn=weighted_average,
+            evaluate_metrics_aggregation_fn=weighted_average,
         )
     else:
         strategy = fl.server.strategy.FedAvg(
@@ -958,6 +1067,271 @@ def run_quick_test(base_dir_name = "quick_test_results"):
 
 
 # =============================================================================
+# Security Experiments (Chapter 10 - Poisoning Vulnerability)
+# =============================================================================
+
+def collect_confusion_matrix(config: ExperimentConfig, log_dir: str) -> np.ndarray:
+    """Collect aggregated confusion matrix from the final round across all clients."""
+    final_round = config.num_rounds
+    cm_total = np.zeros((3, 3), dtype=int)
+
+    for c in range(config.num_clients):
+        eval_file = os.path.join(
+            log_dir,
+            f"{config.to_string()}_client_{c}_round_{final_round}_eval.json"
+        )
+        if os.path.exists(eval_file):
+            with open(eval_file) as f:
+                data = json.load(f)
+            if "confusion_matrix" in data:
+                cm_total += np.array(data["confusion_matrix"])
+
+    return cm_total
+
+
+def generate_security_summary(all_results: list, output_dir: str,
+                              baselines: dict = None):
+    """Generate security-focused summary table and comparison."""
+    rows = []
+    for entry in all_results:
+        if entry is None:
+            continue
+        result, cm = entry
+        cfg = result.config
+
+        total_high = int(cm[2].sum()) if cm[2].sum() > 0 else 0
+        h2l = int(cm[2][0]) if total_high > 0 else 0
+        h2l_rate = h2l / total_high if total_high > 0 else 0.0
+
+        attack_label = "none"
+        if cfg.attack_type == 'label_flip':
+            attack_label = f"flip_{int(cfg.attack_fraction * 100)}%"
+
+        rows.append({
+            "Distribution": cfg.distribution.upper(),
+            "Attack": attack_label,
+            "Strategy": cfg.strategy.upper(),
+            "Accuracy": f"{result.final_accuracy:.4f}",
+            "F1": f"{result.final_f1:.4f}",
+            "H2L_Rate": f"{h2l_rate:.4f}",
+            "H2L_Count": h2l,
+            "Total_High": total_high,
+            "Confusion_Matrix": cm.tolist(),
+        })
+
+    df = pd.DataFrame(rows)
+
+    # Compute delta_acc and defense_recovery if baselines available
+    if baselines:
+        delta_acc_col = []
+        for _, row in df.iterrows():
+            dist = row["Distribution"]
+            baseline_key = f"{dist}_none_FEDAVG"
+            if baseline_key in baselines:
+                baseline_acc = baselines[baseline_key]
+                delta = baseline_acc - float(row["Accuracy"])
+                delta_acc_col.append(f"{delta:+.4f}")
+            else:
+                delta_acc_col.append("-")
+        df["Delta_Acc"] = delta_acc_col
+
+    # Save
+    summary_path = os.path.join(output_dir, "security_summary.csv")
+    df_save = df.drop(columns=["Confusion_Matrix"])
+    df_save.to_csv(summary_path, index=False)
+    print(f"\nSaved: {summary_path}")
+
+    # LaTeX table
+    tex_path = os.path.join(output_dir, "security_summary.tex")
+    with open(tex_path, 'w') as f:
+        f.write(df_save.to_latex(index=False, escape=False))
+    print(f"Saved: {tex_path}")
+
+    # Print summary
+    print("\n" + "=" * 80)
+    print("SECURITY EXPERIMENT RESULTS")
+    print("=" * 80)
+    print(df_save.to_string(index=False))
+    print("=" * 80)
+
+    # Save per-experiment confusion matrices
+    for entry in all_results:
+        if entry is None:
+            continue
+        result, cm = entry
+        cm_path = os.path.join(output_dir, f"{result.config.to_string()}_confusion_matrix.json")
+        with open(cm_path, 'w') as f:
+            json.dump({
+                "config": result.config.to_string(),
+                "confusion_matrix": cm.tolist(),
+                "labels": ["Low", "Medium", "High"],
+            }, f, indent=2)
+
+    return df
+
+
+def run_security_experiments(base_dir_name="v2"):
+    """
+    Phase 1 security experiments: FL poisoning vulnerability assessment.
+
+    Runs 24 configurations: 2 distributions x 3 attack levels x 4 strategies.
+    Model fixed to GRU (best trade-off from Chapter 9).
+    """
+    results_root = get_project_paths()
+    base_dir = os.path.join(results_root, base_dir_name)
+
+    print("=" * 70)
+    print("ITS FL Security Experiments - Phase 1: Poisoning Vulnerability")
+    print(f"Output Directory: {base_dir}")
+    print("=" * 70)
+
+    client_results_dir = os.path.join(base_dir, "client_logs")
+    paper_results_dir = os.path.join(base_dir, "paper_artifacts")
+    os.makedirs(client_results_dir, exist_ok=True)
+    os.makedirs(paper_results_dir, exist_ok=True)
+
+    # Fixed parameters
+    model = "gru"
+    num_clients = 3
+    num_rounds = 10
+    local_epochs = 5
+    batch_size = 32
+    malicious = [0]  # RSU 0 (55% High in Non-IID)
+
+    distributions = ["iid", "noniid"]
+    strategies = ["fedavg", "fedprox", "krum", "trimmed_mean"]
+    attacks = [
+        ("none", 0.0),
+        ("label_flip", 0.2),
+        ("label_flip", 0.5),
+    ]
+
+    # Build experiment matrix
+    experiments = []
+    for dist in distributions:
+        for atk_type, atk_frac in attacks:
+            for strat in strategies:
+                mal = malicious if atk_type != "none" else []
+                cfg = ExperimentConfig(
+                    model_type=model,
+                    num_clients=num_clients,
+                    num_rounds=num_rounds,
+                    local_epochs=local_epochs,
+                    batch_size=batch_size,
+                    distribution=dist,
+                    strategy=strat,
+                    fedprox_mu=0.1,
+                    attack_type=atk_type,
+                    attack_fraction=atk_frac,
+                    malicious_clients=mal,
+                )
+                experiments.append(cfg)
+
+    print(f"\nTotal experiments: {len(experiments)}")
+    print(f"Model: {model.upper()}, Clients: {num_clients}, "
+          f"Rounds: {num_rounds}, Local epochs: {local_epochs}")
+    print(f"Malicious client(s): {malicious}")
+    print(f"Strategies: {strategies}")
+    print(f"Attacks: {attacks}\n")
+
+    # Run experiments
+    all_results = []
+    baselines = {}
+
+    for i, cfg in enumerate(experiments):
+        print(f"\n{'='*60}")
+        print(f"Experiment {i+1}/{len(experiments)}: {cfg.to_string()}")
+        print(f"{'='*60}")
+
+        result = run_federated_experiment(cfg, log_dir=client_results_dir)
+        if result:
+            cm = collect_confusion_matrix(cfg, client_results_dir)
+            all_results.append((result, cm))
+
+            # Save per-experiment JSON
+            result_data = asdict(result)
+            result_data["confusion_matrix_aggregated"] = cm.tolist()
+            file_path = os.path.join(paper_results_dir, f"{cfg.to_string()}.json")
+            with open(file_path, 'w') as f:
+                json.dump(result_data, f, indent=2, default=str)
+
+            # Track baselines for delta computation
+            if cfg.attack_type == "none":
+                key = f"{cfg.distribution.upper()}_none_{cfg.strategy.upper()}"
+                baselines[key] = result.final_accuracy
+        else:
+            all_results.append(None)
+
+    # Generate summary
+    generate_security_summary(all_results, paper_results_dir, baselines)
+
+    print("\n" + "=" * 70)
+    print(f"Complete! Results saved in: {paper_results_dir}")
+    print("=" * 70)
+
+    return all_results
+
+
+def run_security_quick_test(base_dir_name="v2_quick"):
+    """Quick security test: 4 configs to validate pipeline."""
+    results_root = get_project_paths()
+    base_dir = os.path.join(results_root, base_dir_name)
+
+    print("=" * 70)
+    print("ITS FL Security - Quick Validation Test")
+    print(f"Output Directory: {base_dir}")
+    print("=" * 70)
+
+    client_results_dir = os.path.join(base_dir, "client_logs")
+    paper_results_dir = os.path.join(base_dir, "paper_artifacts")
+    os.makedirs(client_results_dir, exist_ok=True)
+    os.makedirs(paper_results_dir, exist_ok=True)
+
+    experiments = [
+        # Baseline: no attack, FedAvg, IID
+        ExperimentConfig("gru", 3, 10, 5, 32, "iid", "fedavg"),
+        # Attack: 50% flip, FedAvg, IID
+        ExperimentConfig("gru", 3, 10, 5, 32, "iid", "fedavg",
+                         attack_type="label_flip", attack_fraction=0.5,
+                         malicious_clients=[0]),
+        # Attack: 50% flip, Krum, IID
+        ExperimentConfig("gru", 3, 10, 5, 32, "iid", "krum",
+                         attack_type="label_flip", attack_fraction=0.5,
+                         malicious_clients=[0]),
+        # Attack: 50% flip, Trimmed Mean, IID
+        ExperimentConfig("gru", 3, 10, 5, 32, "iid", "trimmed_mean",
+                         attack_type="label_flip", attack_fraction=0.5,
+                         malicious_clients=[0]),
+    ]
+
+    all_results = []
+    for i, cfg in enumerate(experiments):
+        print(f"\n{'='*60}")
+        print(f"Quick Test {i+1}/{len(experiments)}: {cfg.to_string()}")
+        print(f"{'='*60}")
+
+        result = run_federated_experiment(cfg, log_dir=client_results_dir)
+        if result:
+            cm = collect_confusion_matrix(cfg, client_results_dir)
+            all_results.append((result, cm))
+            result_data = asdict(result)
+            result_data["confusion_matrix_aggregated"] = cm.tolist()
+            file_path = os.path.join(paper_results_dir, f"{cfg.to_string()}.json")
+            with open(file_path, 'w') as f:
+                json.dump(result_data, f, indent=2, default=str)
+        else:
+            all_results.append(None)
+
+    generate_security_summary(all_results, paper_results_dir)
+
+    print("\n" + "=" * 70)
+    print(f"Quick test complete! Results saved in: {paper_results_dir}")
+    print("=" * 70)
+
+    return all_results
+
+
+# =============================================================================
 # Entry Point
 # =============================================================================
 
@@ -967,18 +1341,20 @@ if __name__ == "__main__":
         multiprocessing.set_start_method('spawn', force=True)
     except RuntimeError:
         pass  # Already set
-    
+
     set_global_seeds(42)
     tf.get_logger().setLevel('ERROR')
-    
+
     # Configure system resources (CPU or GPU) to ensure centralized baseline is run on GPU (if available)
     configure_system_resources()
 
     import sys
 
-    results_version="v1"
-
-    if len(sys.argv) > 1 and sys.argv[1] == "--quick":
-        run_quick_test(base_dir_name=results_version)
+    if len(sys.argv) > 1 and sys.argv[1] == "--security":
+        run_security_experiments(base_dir_name="v2")
+    elif len(sys.argv) > 1 and sys.argv[1] == "--security-quick":
+        run_security_quick_test(base_dir_name="v2_quick")
+    elif len(sys.argv) > 1 and sys.argv[1] == "--quick":
+        run_quick_test(base_dir_name="v1")
     else:
-        run_full_suite(base_dir_name=results_version)
+        run_full_suite(base_dir_name="v1")
