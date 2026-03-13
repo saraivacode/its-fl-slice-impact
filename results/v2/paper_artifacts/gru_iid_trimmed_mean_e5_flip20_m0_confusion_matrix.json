@@ -2,19 +2,19 @@
   "config": "gru_iid_trimmed_mean_e5_flip20_m0",
   "confusion_matrix": [
     [
-      247,
+      370,
       7,
       0
     ],
     [
-      3,
-      263,
-      1
+      4,
+      393,
+      5
     ],
     [
-      0,
-      6,
-      153
+      1,
+      4,
+      236
     ]
   ],
   "labels": [

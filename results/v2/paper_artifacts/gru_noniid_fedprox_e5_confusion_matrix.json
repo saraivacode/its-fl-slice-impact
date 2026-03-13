@@ -2,19 +2,19 @@
   "config": "gru_noniid_fedprox_e5",
   "confusion_matrix": [
     [
-      57,
-      0,
+      318,
+      59,
       0
     ],
     [
-      39,
-      61,
-      0
+      46,
+      305,
+      50
     ],
     [
       0,
-      72,
-      61
+      71,
+      171
     ]
   ],
   "labels": [

@@ -2,19 +2,19 @@
   "config": "gru_iid_fedavg_e5_flip20_m0",
   "confusion_matrix": [
     [
-      120,
-      1,
+      369,
+      8,
       0
     ],
     [
       2,
-      137,
-      0
+      396,
+      4
     ],
     [
-      0,
+      1,
       5,
-      75
+      235
     ]
   ],
   "labels": [

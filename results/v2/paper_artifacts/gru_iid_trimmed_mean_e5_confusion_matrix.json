@@ -2,19 +2,19 @@
   "config": "gru_iid_trimmed_mean_e5",
   "confusion_matrix": [
     [
-      245,
-      9,
+      370,
+      7,
       0
     ],
     [
-      3,
-      262,
-      2
+      2,
+      395,
+      5
     ],
     [
-      0,
+      1,
       4,
-      155
+      236
     ]
   ],
   "labels": [
