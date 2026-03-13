@@ -381,9 +381,11 @@ def apply_label_flip_attack(y_train: np.ndarray, fraction: float,
     In the ITS context, High(2)->Low(0) flipping suppresses lifecycle decisions:
     the model learns to classify degraded slices as adequate.
 
-    Returns (y_modified, num_flipped).
+    Returns (y_modified, num_flipped, flip_indices).
     """
     assert 0.0 < fraction <= 1.0, f"Fraction must be in (0, 1], got {fraction}"
+    assert source_class != target_class, \
+        f"source_class and target_class must differ, got {source_class} == {target_class}"
     y_modified = y_train.copy()
 
     source_indices = np.where(y_modified == source_class)[0]
@@ -391,7 +393,7 @@ def apply_label_flip_attack(y_train: np.ndarray, fraction: float,
 
     if total_source == 0:
         print(f"  WARNING: No samples of class {source_class} to flip")
-        return y_modified, 0
+        return y_modified, 0, np.array([], dtype=int)
 
     rng = np.random.RandomState(seed)
     num_to_flip = int(np.ceil(fraction * total_source))
@@ -406,7 +408,7 @@ def apply_label_flip_attack(y_train: np.ndarray, fraction: float,
     assert np.sum(y_modified == target_class) == np.sum(y_train == target_class) + num_to_flip, \
         "Target class count mismatch after flipping"
 
-    return y_modified, num_to_flip
+    return y_modified, num_to_flip, flip_indices
 
 
 # =============================================================================
@@ -690,13 +692,25 @@ def start_client(config: ExperimentConfig, client_id: int, log_dir: str):
         # Apply poisoning attack if this client is malicious
         if config.attack_type == 'label_flip' and client_id in config.malicious_clients:
             high_before = int(np.sum(y_train == 2))
-            y_train, num_flipped = apply_label_flip_attack(
+            y_train, num_flipped, flip_indices = apply_label_flip_attack(
                 y_train, config.attack_fraction,
                 source_class=2, target_class=0,
                 seed=42 + client_id
             )
             print(f"  ATTACK: Client {client_id} flipped {num_flipped}/{high_before} "
                   f"High->Low labels ({config.attack_fraction*100:.0f}%)")
+
+            # Log attack details for post-hoc analysis
+            attack_log = os.path.join(log_dir, f"{config.to_string()}_client_{client_id}_attack.json")
+            with open(attack_log, 'w') as f:
+                json.dump({
+                    "client_id": client_id,
+                    "source_class": 2, "target_class": 0,
+                    "fraction": config.attack_fraction,
+                    "total_source_samples": high_before,
+                    "num_flipped": num_flipped,
+                    "flip_indices": flip_indices.tolist(),
+                }, f)
 
         client = ITSRsuClient(config, X_train, y_train, X_test, y_test, client_id, log_dir)
         fl.client.start_numpy_client(server_address="127.0.0.1:8085", client=client)
