@@ -733,7 +733,7 @@ def start_server(config: ExperimentConfig):
         strategy = fl.server.strategy.FedTrimmedAvg(
             min_fit_clients=config.num_clients,
             min_available_clients=config.num_clients,
-            beta=0.2,
+            beta=0.34,  # floor(0.34*3)=1: trims 1 value per tail -> coordinate-wise median
             fit_metrics_aggregation_fn=weighted_average,
             evaluate_metrics_aggregation_fn=weighted_average,
         )
