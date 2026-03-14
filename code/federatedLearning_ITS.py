@@ -218,6 +218,7 @@ class ExperimentConfig:
     attack_type: str = 'none'  # 'none' or 'label_flip'
     attack_fraction: float = 0.0  # fraction of source_class labels to flip
     malicious_clients: List[int] = field(default_factory=list)
+    scale_factor: float = 1.0  # gradient scaling factor for model poisoning (1.0 = no scaling)
 
     def to_string(self):
         base = f"{self.model_type}_{self.distribution}_{self.strategy}_e{self.local_epochs}"
@@ -225,6 +226,8 @@ class ExperimentConfig:
             flip_pct = int(self.attack_fraction * 100)
             mal_ids = ''.join(str(c) for c in sorted(self.malicious_clients))
             base += f"_flip{flip_pct}_m{mal_ids}"
+        if self.scale_factor > 1.0:
+            base += f"_scale{int(self.scale_factor)}x"
         return base
 
 
@@ -498,38 +501,72 @@ class ITSRsuClient(fl.client.NumPyClient):
     def fit(self, parameters, config):
         self.current_round = config.get("round", self.current_round + 1)
         self.model.set_weights(parameters)
-        
-        if self.config.strategy == "fedprox":
-            self.global_weights = [w.copy() for w in parameters]
-        
+
+        # Store global weights for delta computation (needed for FedProx and gradient scaling)
+        self.global_weights = [w.copy() for w in parameters]
+
         # Prepare data
         X_train = self.X_train
         y_train = self.y_train
-        
+
         # Reshape for recurrent models
         if self.config.model_type in ["lstm", "gru"]:
             X_train = X_train.reshape((X_train.shape[0], 1, X_train.shape[1]))
-        
+
         # Final validation before training
         assert len(X_train) == len(y_train), \
             f"Training data mismatch in fit(): X={len(X_train)}, y={len(y_train)}"
-        
+
         start = time.time()
-        
+
         if self.config.strategy == "fedprox" and self.global_weights:
             self._train_fedprox(X_train, y_train)
         else:
             self.model.fit(X_train, y_train, epochs=self.config.local_epochs,
                           batch_size=self.config.batch_size, verbose=0)
-        
+
         train_time = time.time() - start
-        
-        # Evaluate on training data
+
+        # Evaluate on training data (pre-boost, reflects actual local training)
         loss, acc = self.model.evaluate(X_train, y_train, verbose=0)
-        
-        # Save training metrics
+
+        # Save training metrics (pre-boost)
         self._save_fit_metrics(train_time, loss, acc)
-        
+
+        # Apply gradient scaling for model poisoning (after metrics, before return)
+        is_malicious = self.client_id in self.config.malicious_clients
+        if is_malicious and self.config.scale_factor > 1.0:
+            trained_weights = self.model.get_weights()
+            boosted_weights = [
+                gw + self.config.scale_factor * (tw - gw)
+                for tw, gw in zip(trained_weights, self.global_weights)
+            ]
+            self.model.set_weights(boosted_weights)
+
+            # Compute and log L2 norms for post-hoc analysis
+            original_norm = sum(
+                float(np.linalg.norm(tw - gw))
+                for tw, gw in zip(trained_weights, self.global_weights)
+            )
+            boosted_norm = original_norm * self.config.scale_factor
+            print(f"  BOOST: Client {self.client_id} round {self.current_round} "
+                  f"scale={self.config.scale_factor}x, "
+                  f"L2 norm: {original_norm:.4f} -> {boosted_norm:.4f}")
+
+            # Persist norms to JSON for post-hoc analysis
+            norm_log = os.path.join(
+                self.log_dir,
+                f"{self.config.to_string()}_client_{self.client_id}_round_{self.current_round}_boost.json"
+            )
+            with open(norm_log, 'w') as f:
+                json.dump({
+                    "round": self.current_round,
+                    "client_id": self.client_id,
+                    "scale_factor": self.config.scale_factor,
+                    "original_l2_norm": original_norm,
+                    "boosted_l2_norm": boosted_norm,
+                }, f)
+
         return self.model.get_weights(), len(self.X_train), {
             "loss": float(loss), "accuracy": float(acc), "train_time": float(train_time)
         }
@@ -1352,6 +1389,186 @@ def run_security_quick_test(base_dir_name="v2_quick"):
     return all_results
 
 
+def run_security_phase1b(base_dir_name="v2b"):
+    """
+    Phase 1b security experiments: Model poisoning with gradient scaling.
+
+    Tests whether amplifying the malicious update (gradient scaling) can overcome
+    the natural resilience demonstrated in Phase 1a (label-flipping alone).
+
+    Configuration:
+    - Label-flip: 100% High→Low on Client 0 (maximize malicious content)
+    - Scale factors: 1× (control), 5×, 10×, 20×
+    - Strategies: FedAvg (no defense), Krum, Trimmed Mean
+    - FedProx removed (Phase 1a confirmed no value: ≤0.19pp vs FedAvg)
+
+    Total: 2 distributions × 4 scale factors × 3 strategies = 24 experiments.
+
+    Note on defenses:
+    - Krum operates with knowledge of num_malicious_clients=1 (optimistic for defense)
+    - Trimmed Mean with beta=0.34 and 3 clients is effectively coordinate-wise median
+      (strongest possible defense in this configuration)
+    """
+    results_root = get_project_paths()
+    base_dir = os.path.join(results_root, base_dir_name)
+
+    print("=" * 70)
+    print("ITS FL Security Experiments - Phase 1b: Model Poisoning (Gradient Scaling)")
+    print(f"Output Directory: {base_dir}")
+    print("=" * 70)
+
+    client_results_dir = os.path.join(base_dir, "client_logs")
+    paper_results_dir = os.path.join(base_dir, "paper_artifacts")
+    os.makedirs(client_results_dir, exist_ok=True)
+    os.makedirs(paper_results_dir, exist_ok=True)
+
+    # Fixed parameters (same as Phase 1a)
+    model = "gru"
+    num_clients = 3
+    num_rounds = 10
+    local_epochs = 5
+    batch_size = 32
+    malicious = [0]  # RSU 0 (55% High in Non-IID)
+
+    distributions = ["iid", "noniid"]
+    strategies = ["fedavg", "krum", "trimmed_mean"]
+    scale_factors = [1.0, 5.0, 10.0, 20.0]
+
+    # Build experiment matrix
+    experiments = []
+    for dist in distributions:
+        for scale in scale_factors:
+            for strat in strategies:
+                cfg = ExperimentConfig(
+                    model_type=model,
+                    num_clients=num_clients,
+                    num_rounds=num_rounds,
+                    local_epochs=local_epochs,
+                    batch_size=batch_size,
+                    distribution=dist,
+                    strategy=strat,
+                    attack_type="label_flip",
+                    attack_fraction=1.0,  # 100% High→Low
+                    malicious_clients=malicious,
+                    scale_factor=scale,
+                )
+                experiments.append(cfg)
+
+    print(f"\nTotal experiments: {len(experiments)}")
+    print(f"Model: {model.upper()}, Clients: {num_clients}, "
+          f"Rounds: {num_rounds}, Local epochs: {local_epochs}")
+    print(f"Malicious client(s): {malicious}")
+    print(f"Strategies: {strategies}")
+    print(f"Scale factors: {scale_factors}")
+    print(f"Attack: 100% label-flip High→Low + gradient scaling\n")
+
+    # Run experiments
+    all_results = []
+    baselines = {}
+
+    for i, cfg in enumerate(experiments):
+        print(f"\n{'='*60}")
+        print(f"Experiment {i+1}/{len(experiments)}: {cfg.to_string()}")
+        print(f"{'='*60}")
+
+        result = run_federated_experiment(cfg, log_dir=client_results_dir)
+        if result:
+            cm = collect_confusion_matrix(cfg, client_results_dir)
+            all_results.append((result, cm))
+
+            # Save per-experiment JSON
+            result_data = asdict(result)
+            result_data["confusion_matrix_aggregated"] = cm.tolist()
+            file_path = os.path.join(paper_results_dir, f"{cfg.to_string()}.json")
+            with open(file_path, 'w') as f:
+                json.dump(result_data, f, indent=2, default=str)
+
+            # Track scale=1 as baselines for delta computation
+            if cfg.scale_factor == 1.0:
+                key = f"{cfg.distribution.upper()}_scale1_{cfg.strategy.upper()}"
+                baselines[key] = result.final_accuracy
+        else:
+            all_results.append(None)
+
+    # Generate summary
+    generate_security_summary(all_results, paper_results_dir, baselines)
+
+    print("\n" + "=" * 70)
+    print(f"Phase 1b complete! Results saved in: {paper_results_dir}")
+    print("=" * 70)
+
+    return all_results
+
+
+def run_security_phase1b_quick(base_dir_name="v2b_quick"):
+    """
+    Quick validation test for Phase 1b: 4 configs to verify gradient scaling works.
+
+    Expected results:
+    1. scale1x FedAvg: similar to Phase 1a (label-flip alone has no effect)
+    2. scale10x FedAvg: measurable accuracy drop and H→L rate increase
+    3. scale10x Krum: should recover (reject amplified update via L2 distance)
+    4. scale10x Trimmed Mean: should be near-perfect (median discards extremes)
+    """
+    results_root = get_project_paths()
+    base_dir = os.path.join(results_root, base_dir_name)
+
+    print("=" * 70)
+    print("ITS FL Security - Phase 1b Quick Validation")
+    print(f"Output Directory: {base_dir}")
+    print("=" * 70)
+
+    client_results_dir = os.path.join(base_dir, "client_logs")
+    paper_results_dir = os.path.join(base_dir, "paper_artifacts")
+    os.makedirs(client_results_dir, exist_ok=True)
+    os.makedirs(paper_results_dir, exist_ok=True)
+
+    experiments = [
+        # Control: 100% flip, no scaling (should match Phase 1a resilience)
+        ExperimentConfig("gru", 3, 10, 5, 32, "iid", "fedavg",
+                         attack_type="label_flip", attack_fraction=1.0,
+                         malicious_clients=[0], scale_factor=1.0),
+        # Attack: 100% flip + 10x scaling on FedAvg (expect degradation)
+        ExperimentConfig("gru", 3, 10, 5, 32, "iid", "fedavg",
+                         attack_type="label_flip", attack_fraction=1.0,
+                         malicious_clients=[0], scale_factor=10.0),
+        # Defense: Krum should detect and reject amplified update
+        ExperimentConfig("gru", 3, 10, 5, 32, "iid", "krum",
+                         attack_type="label_flip", attack_fraction=1.0,
+                         malicious_clients=[0], scale_factor=10.0),
+        # Defense: Trimmed Mean (median) should discard extreme values
+        ExperimentConfig("gru", 3, 10, 5, 32, "iid", "trimmed_mean",
+                         attack_type="label_flip", attack_fraction=1.0,
+                         malicious_clients=[0], scale_factor=10.0),
+    ]
+
+    all_results = []
+    for i, cfg in enumerate(experiments):
+        print(f"\n{'='*60}")
+        print(f"Quick Test {i+1}/{len(experiments)}: {cfg.to_string()}")
+        print(f"{'='*60}")
+
+        result = run_federated_experiment(cfg, log_dir=client_results_dir)
+        if result:
+            cm = collect_confusion_matrix(cfg, client_results_dir)
+            all_results.append((result, cm))
+            result_data = asdict(result)
+            result_data["confusion_matrix_aggregated"] = cm.tolist()
+            file_path = os.path.join(paper_results_dir, f"{cfg.to_string()}.json")
+            with open(file_path, 'w') as f:
+                json.dump(result_data, f, indent=2, default=str)
+        else:
+            all_results.append(None)
+
+    generate_security_summary(all_results, paper_results_dir)
+
+    print("\n" + "=" * 70)
+    print(f"Phase 1b quick test complete! Results saved in: {paper_results_dir}")
+    print("=" * 70)
+
+    return all_results
+
+
 # =============================================================================
 # Entry Point
 # =============================================================================
@@ -1375,6 +1592,10 @@ if __name__ == "__main__":
         run_security_experiments(base_dir_name="v2")
     elif len(sys.argv) > 1 and sys.argv[1] == "--security-quick":
         run_security_quick_test(base_dir_name="v2_quick")
+    elif len(sys.argv) > 1 and sys.argv[1] == "--security-phase1b":
+        run_security_phase1b(base_dir_name="v2b")
+    elif len(sys.argv) > 1 and sys.argv[1] == "--security-phase1b-quick":
+        run_security_phase1b_quick(base_dir_name="v2b_quick")
     elif len(sys.argv) > 1 and sys.argv[1] == "--quick":
         run_quick_test(base_dir_name="v1")
     else:
