@@ -1,0 +1,25 @@
+{
+  "config": "gru_noniid_trimmed_mean_e5_flip100_m0",
+  "confusion_matrix": [
+    [
+      351,
+      26,
+      0
+    ],
+    [
+      83,
+      306,
+      12
+    ],
+    [
+      2,
+      99,
+      141
+    ]
+  ],
+  "labels": [
+    "Low",
+    "Medium",
+    "High"
+  ]
+}
