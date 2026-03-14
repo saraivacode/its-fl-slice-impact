@@ -1,0 +1,12 @@
+\begin{tabular}{llllllrr}
+\toprule
+Distribution & Attack & Strategy & Accuracy & F1 & H2L_Rate & H2L_Count & Total_High \\
+\midrule
+IID & flip_100% & FEDAVG & 0.7049 & 0.5319 & 0.4979 & 120 & 241 \\
+IID & flip_100% & KRUM & 0.9667 & 0.9663 & 0.0041 & 1 & 241 \\
+IID & flip_100% & TRIMMED_MEAN & 0.9676 & 0.9669 & 0.0041 & 1 & 241 \\
+NONIID & flip_100% & FEDAVG & 0.5520 & 0.4089 & 0.8388 & 203 & 242 \\
+NONIID & flip_100% & KRUM & 0.7990 & 0.8074 & 0.0000 & 0 & 242 \\
+NONIID & flip_100% & TRIMMED_MEAN & 0.7971 & 0.7975 & 0.0661 & 16 & 242 \\
+\bottomrule
+\end{tabular}

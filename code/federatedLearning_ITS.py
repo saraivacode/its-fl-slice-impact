@@ -782,7 +782,7 @@ def start_server(config: ExperimentConfig):
         strategy = fl.server.strategy.Krum(
             min_fit_clients=config.num_clients,
             min_available_clients=config.num_clients,
-            num_malicious_clients=len(config.malicious_clients),
+            num_malicious_clients=0,  # realistic: defender has no knowledge of adversary count
             num_clients_to_keep=0,  # classical Krum (select single best)
             fit_metrics_aggregation_fn=weighted_average,
             evaluate_metrics_aggregation_fn=weighted_average,
@@ -1405,7 +1405,7 @@ def run_security_phase1b(base_dir_name="v2b"):
     Total: 2 distributions × 4 scale factors × 3 strategies = 24 experiments.
 
     Note on defenses:
-    - Krum operates with knowledge of num_malicious_clients=1 (optimistic for defense)
+    - Krum operates with num_malicious_clients=0 (realistic: no privileged adversary knowledge)
     - Trimmed Mean with beta=0.34 and 3 clients is effectively coordinate-wise median
       (strongest possible defense in this configuration)
     """
@@ -1569,6 +1569,185 @@ def run_security_phase1b_quick(base_dir_name="v2b_quick"):
     return all_results
 
 
+def run_security_phase1b_krum_rerun(base_dir_name="v2b_krum_fixed"):
+    """
+    Rerun ONLY the 8 Krum experiments from Phase 1b with num_malicious_clients=0.
+
+    This fixes the privileged information issue where Krum was told exactly how
+    many malicious clients exist. With m=0 and n=3, Krum uses (n-0-2)=1 nearest
+    neighbor per client, giving proper distance-based scores.
+
+    Configs: 2 distributions × 4 scale factors × 1 strategy (Krum) = 8 experiments.
+    """
+    results_root = get_project_paths()
+    base_dir = os.path.join(results_root, base_dir_name)
+
+    print("=" * 70)
+    print("ITS FL Security - Phase 1b Krum Rerun (num_malicious_clients=0)")
+    print(f"Output Directory: {base_dir}")
+    print("=" * 70)
+
+    client_results_dir = os.path.join(base_dir, "client_logs")
+    paper_results_dir = os.path.join(base_dir, "paper_artifacts")
+    os.makedirs(client_results_dir, exist_ok=True)
+    os.makedirs(paper_results_dir, exist_ok=True)
+
+    model = "gru"
+    num_clients = 3
+    num_rounds = 10
+    local_epochs = 5
+    batch_size = 32
+    malicious = [0]
+
+    distributions = ["iid", "noniid"]
+    scale_factors = [1.0, 5.0, 10.0, 20.0]
+
+    experiments = []
+    for dist in distributions:
+        for scale in scale_factors:
+            cfg = ExperimentConfig(
+                model_type=model,
+                num_clients=num_clients,
+                num_rounds=num_rounds,
+                local_epochs=local_epochs,
+                batch_size=batch_size,
+                distribution=dist,
+                strategy="krum",
+                attack_type="label_flip",
+                attack_fraction=1.0,
+                malicious_clients=malicious,
+                scale_factor=scale,
+            )
+            experiments.append(cfg)
+
+    print(f"\nTotal experiments: {len(experiments)}")
+    print(f"Strategy: Krum (num_malicious_clients=0)")
+    print(f"Scale factors: {scale_factors}\n")
+
+    all_results = []
+    baselines = {}
+
+    for i, cfg in enumerate(experiments):
+        print(f"\n{'='*60}")
+        print(f"Experiment {i+1}/{len(experiments)}: {cfg.to_string()}")
+        print(f"{'='*60}")
+
+        result = run_federated_experiment(cfg, log_dir=client_results_dir)
+        if result:
+            cm = collect_confusion_matrix(cfg, client_results_dir)
+            all_results.append((result, cm))
+
+            result_data = asdict(result)
+            result_data["confusion_matrix_aggregated"] = cm.tolist()
+            file_path = os.path.join(paper_results_dir, f"{cfg.to_string()}.json")
+            with open(file_path, 'w') as f:
+                json.dump(result_data, f, indent=2, default=str)
+
+            if cfg.scale_factor == 1.0:
+                key = f"{cfg.distribution.upper()}_scale1_{cfg.strategy.upper()}"
+                baselines[key] = result.final_accuracy
+        else:
+            all_results.append(None)
+
+    generate_security_summary(all_results, paper_results_dir, baselines)
+
+    print("\n" + "=" * 70)
+    print(f"Krum rerun complete! Results saved in: {paper_results_dir}")
+    print("=" * 70)
+
+    return all_results
+
+
+def run_security_sensitivity_epochs(base_dir_name="v2b_sensitivity_epochs"):
+    """
+    Sensitivity analysis: local_epochs=1 vs default local_epochs=5.
+
+    Tests 6 key configs with local_epochs=1 to assess whether slower convergence
+    gives the attacker more influence. Covers FedAvg (vulnerable), Krum and
+    Trimmed Mean (robust) at representative scale factors.
+
+    Configs: 2 distributions × 3 strategies × 1 scale factor = 6 experiments.
+    """
+    results_root = get_project_paths()
+    base_dir = os.path.join(results_root, base_dir_name)
+
+    print("=" * 70)
+    print("ITS FL Security - Sensitivity Analysis: local_epochs=1")
+    print(f"Output Directory: {base_dir}")
+    print("=" * 70)
+
+    client_results_dir = os.path.join(base_dir, "client_logs")
+    paper_results_dir = os.path.join(base_dir, "paper_artifacts")
+    os.makedirs(client_results_dir, exist_ok=True)
+    os.makedirs(paper_results_dir, exist_ok=True)
+
+    model = "gru"
+    num_clients = 3
+    num_rounds = 10
+    local_epochs = 1  # KEY CHANGE: 1 epoch instead of 5
+    batch_size = 32
+    malicious = [0]
+
+    # Key configs: FedAvg@5x (devastating), Krum@10x (defense), TM@10x (defense)
+    configs = [
+        ("iid", "fedavg", 5.0),
+        ("iid", "krum", 10.0),
+        ("iid", "trimmed_mean", 10.0),
+        ("noniid", "fedavg", 5.0),
+        ("noniid", "krum", 10.0),
+        ("noniid", "trimmed_mean", 10.0),
+    ]
+
+    experiments = []
+    for dist, strat, scale in configs:
+        cfg = ExperimentConfig(
+            model_type=model,
+            num_clients=num_clients,
+            num_rounds=num_rounds,
+            local_epochs=local_epochs,
+            batch_size=batch_size,
+            distribution=dist,
+            strategy=strat,
+            attack_type="label_flip",
+            attack_fraction=1.0,
+            malicious_clients=malicious,
+            scale_factor=scale,
+        )
+        experiments.append(cfg)
+
+    print(f"\nTotal experiments: {len(experiments)}")
+    print(f"local_epochs: {local_epochs} (sensitivity test)")
+    print(f"Configs: {configs}\n")
+
+    all_results = []
+
+    for i, cfg in enumerate(experiments):
+        print(f"\n{'='*60}")
+        print(f"Experiment {i+1}/{len(experiments)}: {cfg.to_string()}")
+        print(f"{'='*60}")
+
+        result = run_federated_experiment(cfg, log_dir=client_results_dir)
+        if result:
+            cm = collect_confusion_matrix(cfg, client_results_dir)
+            all_results.append((result, cm))
+
+            result_data = asdict(result)
+            result_data["confusion_matrix_aggregated"] = cm.tolist()
+            file_path = os.path.join(paper_results_dir, f"{cfg.to_string()}.json")
+            with open(file_path, 'w') as f:
+                json.dump(result_data, f, indent=2, default=str)
+        else:
+            all_results.append(None)
+
+    generate_security_summary(all_results, paper_results_dir)
+
+    print("\n" + "=" * 70)
+    print(f"Sensitivity analysis complete! Results saved in: {paper_results_dir}")
+    print("=" * 70)
+
+    return all_results
+
+
 # =============================================================================
 # Entry Point
 # =============================================================================
@@ -1596,6 +1775,10 @@ if __name__ == "__main__":
         run_security_phase1b(base_dir_name="v2b")
     elif len(sys.argv) > 1 and sys.argv[1] == "--security-phase1b-quick":
         run_security_phase1b_quick(base_dir_name="v2b_quick")
+    elif len(sys.argv) > 1 and sys.argv[1] == "--security-phase1b-krum-rerun":
+        run_security_phase1b_krum_rerun(base_dir_name="v2b_krum_fixed")
+    elif len(sys.argv) > 1 and sys.argv[1] == "--security-sensitivity-epochs":
+        run_security_sensitivity_epochs(base_dir_name="v2b_sensitivity_epochs")
     elif len(sys.argv) > 1 and sys.argv[1] == "--quick":
         run_quick_test(base_dir_name="v1")
     else:
