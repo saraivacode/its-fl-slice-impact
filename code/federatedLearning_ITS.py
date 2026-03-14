@@ -348,20 +348,23 @@ def _prepare_features_labels(client_data: pd.DataFrame, client_id: int):
                 'log2_rtt', 'log2_pdr', 'rtt_sqrd', 'pdr_sqrd']
     num_cols = [c for c in num_cols if c in features.columns]
     
-    if num_cols:
-        scaler = StandardScaler()
-        features[num_cols] = scaler.fit_transform(features[num_cols].astype(float))
-    
     features = features.astype('float32')
-    
-    # Split
+
+    # Split FIRST, then scale (avoid data leakage)
     min_count = labels.value_counts().min() if len(labels.value_counts()) > 0 else 0
     stratify = labels if min_count >= 2 else None
-    
+
     X_train, X_test, y_train, y_test = train_test_split(
         features, labels, test_size=0.2, random_state=42, stratify=stratify
     )
-    
+
+    # Scale AFTER split: fit on train only, transform both
+    if num_cols:
+        num_cols_present = [c for c in num_cols if c in X_train.columns]
+        scaler = StandardScaler()
+        X_train[num_cols_present] = scaler.fit_transform(X_train[num_cols_present].astype(float))
+        X_test[num_cols_present] = scaler.transform(X_test[num_cols_present].astype(float))
+
     # Convert to numpy arrays
     X_train = X_train.values
     X_test = X_test.values
@@ -670,13 +673,24 @@ def run_centralized_training(model_type: str, num_epochs: int = 30, data_path: s
                 'pdr_change', 'rtt_mam', 'pdr_mam', 'rtt_masd', 'log_rtt', 'log_pdr',
                 'log2_rtt', 'log2_pdr', 'rtt_sqrd', 'pdr_sqrd']
     num_cols = [c for c in num_cols if c in features.columns]
-    if num_cols:
-        features[num_cols] = StandardScaler().fit_transform(features[num_cols].astype(float))
     features = features.astype('float32')
-    
+
+    # Split FIRST, then scale (avoid data leakage)
     X_train, X_test, y_train, y_test = train_test_split(
-        features.values, labels.values, test_size=0.2, random_state=42, stratify=labels
+        features, labels, test_size=0.2, random_state=42, stratify=labels
     )
+
+    # Scale AFTER split: fit on train only, transform both
+    if num_cols:
+        num_cols_present = [c for c in num_cols if c in X_train.columns]
+        scaler = StandardScaler()
+        X_train[num_cols_present] = scaler.fit_transform(X_train[num_cols_present].astype(float))
+        X_test[num_cols_present] = scaler.transform(X_test[num_cols_present].astype(float))
+
+    X_train = X_train.values
+    X_test = X_test.values
+    y_train = y_train.values
+    y_test = y_test.values
     
     model = create_model(model_type, X_train.shape[1])
     
@@ -1399,10 +1413,9 @@ def run_security_phase1b(base_dir_name="v2b"):
     Configuration:
     - Label-flip: 100% High→Low on Client 0 (maximize malicious content)
     - Scale factors: 1× (control), 5×, 10×, 20×
-    - Strategies: FedAvg (no defense), Krum, Trimmed Mean
-    - FedProx removed (Phase 1a confirmed no value: ≤0.19pp vs FedAvg)
+    - Strategies: FedAvg (no defense), FedProx, Krum, Trimmed Mean
 
-    Total: 2 distributions × 4 scale factors × 3 strategies = 24 experiments.
+    Total: 2 distributions × 4 scale factors × 4 strategies = 32 experiments.
 
     Note on defenses:
     - Krum operates with num_malicious_clients=0 (realistic: no privileged adversary knowledge)
@@ -1431,7 +1444,7 @@ def run_security_phase1b(base_dir_name="v2b"):
     malicious = [0]  # RSU 0 (55% High in Non-IID)
 
     distributions = ["iid", "noniid"]
-    strategies = ["fedavg", "krum", "trimmed_mean"]
+    strategies = ["fedavg", "fedprox", "krum", "trimmed_mean"]
     scale_factors = [1.0, 5.0, 10.0, 20.0]
 
     # Build experiment matrix
@@ -1447,6 +1460,7 @@ def run_security_phase1b(base_dir_name="v2b"):
                     batch_size=batch_size,
                     distribution=dist,
                     strategy=strat,
+                    fedprox_mu=0.1,
                     attack_type="label_flip",
                     attack_fraction=1.0,  # 100% High→Low
                     malicious_clients=malicious,
@@ -1662,11 +1676,11 @@ def run_security_sensitivity_epochs(base_dir_name="v2b_sensitivity_epochs"):
     """
     Sensitivity analysis: local_epochs=1 vs default local_epochs=5.
 
-    Tests 6 key configs with local_epochs=1 to assess whether slower convergence
-    gives the attacker more influence. Covers FedAvg (vulnerable), Krum and
+    Tests 8 key configs with local_epochs=1 to assess whether slower convergence
+    gives the attacker more influence. Covers FedAvg/FedProx (vulnerable), Krum and
     Trimmed Mean (robust) at representative scale factors.
 
-    Configs: 2 distributions × 3 strategies × 1 scale factor = 6 experiments.
+    Configs: 2 distributions × 4 strategies × 1 scale factor = 8 experiments.
     """
     results_root = get_project_paths()
     base_dir = os.path.join(results_root, base_dir_name)
@@ -1688,12 +1702,14 @@ def run_security_sensitivity_epochs(base_dir_name="v2b_sensitivity_epochs"):
     batch_size = 32
     malicious = [0]
 
-    # Key configs: FedAvg@5x (devastating), Krum@10x (defense), TM@10x (defense)
+    # Key configs: FedAvg/FedProx@5x (devastating), Krum@10x (defense), TM@10x (defense)
     configs = [
         ("iid", "fedavg", 5.0),
+        ("iid", "fedprox", 5.0),
         ("iid", "krum", 10.0),
         ("iid", "trimmed_mean", 10.0),
         ("noniid", "fedavg", 5.0),
+        ("noniid", "fedprox", 5.0),
         ("noniid", "krum", 10.0),
         ("noniid", "trimmed_mean", 10.0),
     ]
@@ -1768,17 +1784,17 @@ if __name__ == "__main__":
     import sys
 
     if len(sys.argv) > 1 and sys.argv[1] == "--security":
-        run_security_experiments(base_dir_name="v2")
+        run_security_experiments(base_dir_name="v3")
     elif len(sys.argv) > 1 and sys.argv[1] == "--security-quick":
-        run_security_quick_test(base_dir_name="v2_quick")
+        run_security_quick_test(base_dir_name="v3_quick")
     elif len(sys.argv) > 1 and sys.argv[1] == "--security-phase1b":
-        run_security_phase1b(base_dir_name="v2b")
+        run_security_phase1b(base_dir_name="v3b")
     elif len(sys.argv) > 1 and sys.argv[1] == "--security-phase1b-quick":
-        run_security_phase1b_quick(base_dir_name="v2b_quick")
+        run_security_phase1b_quick(base_dir_name="v3b_quick")
     elif len(sys.argv) > 1 and sys.argv[1] == "--security-phase1b-krum-rerun":
-        run_security_phase1b_krum_rerun(base_dir_name="v2b_krum_fixed")
+        run_security_phase1b_krum_rerun(base_dir_name="v3b_krum_fixed")
     elif len(sys.argv) > 1 and sys.argv[1] == "--security-sensitivity-epochs":
-        run_security_sensitivity_epochs(base_dir_name="v2b_sensitivity_epochs")
+        run_security_sensitivity_epochs(base_dir_name="v3b_sensitivity_epochs")
     elif len(sys.argv) > 1 and sys.argv[1] == "--quick":
         run_quick_test(base_dir_name="v1")
     else:

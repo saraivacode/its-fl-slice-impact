@@ -1,0 +1,25 @@
+{
+  "config": "gru_iid_fedavg_e5_flip100_m0_scale5x",
+  "confusion_matrix": [
+    [
+      276,
+      101,
+      0
+    ],
+    [
+      88,
+      314,
+      0
+    ],
+    [
+      241,
+      0,
+      0
+    ]
+  ],
+  "labels": [
+    "Low",
+    "Medium",
+    "High"
+  ]
+}
