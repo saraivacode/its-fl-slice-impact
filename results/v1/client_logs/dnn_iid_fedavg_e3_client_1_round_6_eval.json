@@ -1,0 +1,1 @@
+{"round": 6, "client_id": 1, "loss": 0.31371861696243286, "accuracy": 0.9157407283782959, "precision": 0.8975257767694638, "recall": 0.9266400594282002, "f1": 0.9109301563665986, "dataset_size": 1080, "confusion_matrix": [[149, 5, 0, 0], [18, 169, 15, 0], [1, 44, 490, 8], [0, 0, 0, 181]], "crit_to_adeq_count": 0, "total_critical": 181, "crit_to_adeq_rate": 0.0}
