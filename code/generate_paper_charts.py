@@ -114,12 +114,13 @@ def plot_efficiency_tradeoff():
     }
     
     sns.scatterplot(
-        data=fed_df, x='Total', y='Acc', 
-        hue='Model', style='Strategy', s=250, 
-        palette=model_colors, 
+        data=fed_df, x='Total', y='Acc',
+        hue='Model', style='Strategy', s=250,
+        palette=model_colors,
         markers={'FEDAVG': 'o', 'FEDPROX': 'X'},
-        edgecolor='black', legend=False, ax=ax
+        edgecolor='black', ax=ax
     )
+    plt.legend([], [], frameon=False)
     
     for i in range(fed_df.shape[0]):
         row = fed_df.iloc[i]
