@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-ITS FL Framework - Main Orchestrator
+AIMS Framework - Federated Learning Main Orchestrator
 ======================================
 
 Top-level entry point for running the complete FL experiment suite.
@@ -56,6 +56,23 @@ def _get_project_paths():
     return project_root / "results"
 
 
+def _get_csv_path():
+    """Get path to the AIMS dataset."""
+    return Path(__file__).resolve().parent.parent.parent / "data" / "aims_dataset.csv"
+
+
+def _load_and_split(seed: int = 42):
+    """Load AIMS dataset, preprocess, and split into train/test."""
+    from sklearn.model_selection import train_test_split
+
+    X, y, class_weights, features = load_and_prepare(_get_csv_path(), random_state=seed)
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.2, random_state=seed, stratify=y,
+    )
+    print(f"  Global split: {len(X_train)} train, {len(X_test)} test")
+    return X_train, X_test, y_train, y_test, class_weights
+
+
 def set_seeds(seed: int = 42):
     """Set all random seeds for reproducibility."""
     import random
@@ -79,7 +96,7 @@ def run_full_suite(base_dir_name: str = "v1") -> tuple:
     base_dir = results_root / base_dir_name
 
     print("=" * 70)
-    print("ITS Federated Learning - Full Suite")
+    print("AIMS Federated Learning - Full Suite")
     print(f"Output Directory: {base_dir}")
     print("=" * 70)
 
@@ -89,11 +106,10 @@ def run_full_suite(base_dir_name: str = "v1") -> tuple:
     paper_dir.mkdir(parents=True, exist_ok=True)
 
     results_mgr = FLResultsManager(paper_dir)
-    csv_path = Path(__file__).resolve().parent.parent.parent / "data" / "raw_full.csv"
 
     # Load and prepare data
     print("\n[Step 1/5] Loading and preparing data...")
-    X_train, X_test, y_train, y_test, class_weights, features = load_and_prepare(csv_path)
+    X_train, X_test, y_train, y_test, class_weights = _load_and_split()
 
     # Build experiment configs
     models = ["dnn", "lstm", "gru"]
@@ -178,7 +194,7 @@ def run_quick_test(base_dir_name: str = "v1") -> list:
     base_dir = results_root / base_dir_name
 
     print("=" * 70)
-    print("ITS Federated Learning - Quick Test")
+    print("AIMS Federated Learning - Quick Test")
     print(f"Output Directory: {base_dir}")
     print("=" * 70)
 
@@ -188,9 +204,8 @@ def run_quick_test(base_dir_name: str = "v1") -> list:
     paper_dir.mkdir(parents=True, exist_ok=True)
 
     results_mgr = FLResultsManager(paper_dir)
-    csv_path = Path(__file__).resolve().parent.parent.parent / "data" / "raw_full.csv"
 
-    X_train, X_test, y_train, y_test, class_weights, _ = load_and_prepare(csv_path)
+    X_train, X_test, y_train, y_test, class_weights = _load_and_split()
 
     partitions = {
         "iid": partition_iid(X_train, y_train, _DEFAULTS.NUM_CLIENTS),
@@ -249,9 +264,8 @@ def _run_security_suite(
     paper_dir.mkdir(parents=True, exist_ok=True)
 
     results_mgr = FLResultsManager(paper_dir)
-    csv_path = Path(__file__).resolve().parent.parent.parent / "data" / "raw_full.csv"
 
-    X_train, X_test, y_train, y_test, class_weights, _ = load_and_prepare(csv_path)
+    X_train, X_test, y_train, y_test, class_weights = _load_and_split()
 
     # Determine which distributions we need
     dists_needed = set(cfg.distribution for cfg in experiments)

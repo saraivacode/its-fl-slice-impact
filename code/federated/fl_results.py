@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-ITS FL Framework - Results Manager
+AIMS Framework - Federated Learning Results Manager
 ====================================
 
 Manages saving, aggregating, and formatting FL experiment results
@@ -48,7 +48,7 @@ class FLResultsManager:
                 "library": _get_tf_version(),
             },
             "run_info": {
-                "framework_version": "ITS-FL 2.0.0",
+                "framework_version": "AIMS 1.0.0 + FL + Security",
                 "timestamp_utc": datetime.now(timezone.utc).isoformat(),
                 "system": _get_system_info(),
             },
@@ -163,11 +163,11 @@ class FLResultsManager:
 
             cfg = result.get("config")
             fm = result.get("final_metrics", {})
-            cm = np.array(result.get("confusion_matrix", [[0]*3]*3))
+            cm = np.array(result.get("confusion_matrix", [[0]*4]*4))
 
-            total_high = int(cm[2].sum()) if cm.shape[0] > 2 and cm[2].sum() > 0 else 0
-            h2l = int(cm[2][0]) if total_high > 0 else 0
-            h2l_rate = h2l / total_high if total_high > 0 else 0.0
+            total_crit = int(cm[3].sum()) if cm.shape[0] > 3 and cm[3].sum() > 0 else 0
+            c2a = int(cm[3][0]) if total_crit > 0 else 0
+            c2a_rate = c2a / total_crit if total_crit > 0 else 0.0
 
             attack_label = "none"
             if cfg and cfg.attack_type == 'label_flip':
@@ -184,9 +184,9 @@ class FLResultsManager:
                 "Strategy": (cfg.strategy if cfg else "").upper(),
                 "Accuracy": f"{fm.get('accuracy', 0):.4f}",
                 "F1": f"{fm.get('f1_macro', 0):.4f}",
-                "H2L_Rate": f"{h2l_rate:.4f}",
-                "H2L_Count": h2l,
-                "Total_High": total_high,
+                "C2A_Rate": f"{c2a_rate:.4f}",
+                "C2A_Count": c2a,
+                "Total_Critical": total_crit,
             })
 
         df = pd.DataFrame(rows)
@@ -229,7 +229,7 @@ class FLResultsManager:
                 json.dump({
                     "config": result['config_name'],
                     "confusion_matrix": cm if isinstance(cm, list) else np.array(cm).tolist(),
-                    "labels": ["Low", "Medium", "High"],
+                    "labels": ["Adequate", "Warning", "Severe", "Critical"],
                 }, f, indent=2)
 
         return summary_path

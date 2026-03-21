@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-ITS FL Framework - Federated Learning Simulation Orchestrator
+AIMS Framework - Federated Learning Simulation Orchestrator
 ==============================================================
 
 Implements FedAvg, FedProx, Krum, and Trimmed Mean aggregation strategies
@@ -233,19 +233,19 @@ def run_fl_simulation(
 
         # Apply label-flip attack on malicious clients
         if config.attack_type == 'label_flip' and i in config.malicious_clients:
-            high_before = int(np.sum(y_train == 2))
+            source_before = int(np.sum(y_train == 3))
             y_train, num_flipped, flip_indices = apply_label_flip_attack(
                 y_train, config.attack_fraction,
-                source_class=2, target_class=0,
+                source_class=3, target_class=0,
                 seed=seed + i,
             )
-            print(f"    ATTACK: Client {i} flipped {num_flipped}/{high_before} "
-                  f"High->Low labels ({config.attack_fraction*100:.0f}%)")
+            print(f"    ATTACK: Client {i} flipped {num_flipped}/{source_before} "
+                  f"Critical->Adequate labels ({config.attack_fraction*100:.0f}%)")
 
             atk = {
-                "client_id": i, "source_class": 2, "target_class": 0,
+                "client_id": i, "source_class": 3, "target_class": 0,
                 "fraction": config.attack_fraction,
-                "total_source_samples": high_before,
+                "total_source_samples": source_before,
                 "num_flipped": num_flipped,
                 "flip_indices": flip_indices.tolist(),
             }
@@ -366,10 +366,11 @@ def run_fl_simulation(
         f1_per_class = f1_score(y_test, preds, average=None, zero_division=0)
 
         # Confusion matrix and security metric
-        cm = sk_confusion_matrix(y_test, preds, labels=[0, 1, 2])
-        total_high = int(cm[2].sum()) if cm.shape[0] > 2 else 0
-        high_to_low = int(cm[2][0]) if total_high > 0 else 0
-        high_to_low_rate = high_to_low / total_high if total_high > 0 else 0.0
+        cm = sk_confusion_matrix(y_test, preds, labels=[0, 1, 2, 3])
+        # Security metric: Critical(3)->Adequate(0) misclassification rate
+        total_critical = int(cm[3].sum()) if cm.shape[0] > 3 else 0
+        crit_to_adeq = int(cm[3][0]) if total_critical > 0 else 0
+        crit_to_adeq_rate = crit_to_adeq / total_critical if total_critical > 0 else 0.0
 
         round_metrics.append({
             "round": rnd,
@@ -380,9 +381,9 @@ def run_fl_simulation(
             "recall": float(rec),
             "f1_per_class": [float(v) for v in f1_per_class],
             "confusion_matrix": cm.tolist(),
-            "high_to_low_rate": float(high_to_low_rate),
-            "high_to_low_count": high_to_low,
-            "total_high": total_high,
+            "crit_to_adeq_rate": float(crit_to_adeq_rate),
+            "crit_to_adeq_count": crit_to_adeq,
+            "total_critical": total_critical,
         })
 
         # Save per-round eval metrics for all clients (global model evaluation)
@@ -398,15 +399,15 @@ def run_fl_simulation(
                         "precision": float(prec), "recall": float(rec),
                         "f1": float(f1), "dataset_size": len(y_test),
                         "confusion_matrix": cm.tolist(),
-                        "high_to_low_count": high_to_low,
-                        "total_high": total_high,
-                        "high_to_low_rate": float(high_to_low_rate),
+                        "crit_to_adeq_count": crit_to_adeq,
+                        "total_critical": total_critical,
+                        "crit_to_adeq_rate": float(crit_to_adeq_rate),
                     }, f)
 
         if rnd % 5 == 0 or rnd == config.num_rounds or rnd == 1:
             print(f"    Round {rnd:3d}/{config.num_rounds}: "
                   f"Acc={accuracy:.4f}, F1={f1:.4f}, Loss={loss:.4f}"
-                  + (f", H2L={high_to_low_rate:.4f}" if config.attack_type != 'none' else ""))
+                  + (f", C2A={crit_to_adeq_rate:.4f}" if config.attack_type != 'none' else ""))
 
     total_time = time.time() - start_time
     print(f"    Simulation completed in {total_time:.1f}s")
@@ -439,7 +440,7 @@ def run_fl_simulation(
     )
 
     # Final confusion matrix
-    final_cm = last.get("confusion_matrix", [[0]*3]*3)
+    final_cm = last.get("confusion_matrix", [[0]*4]*4)
 
     return {
         "config_name": config_name,

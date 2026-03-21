@@ -1,18 +1,16 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-ITS FL Framework - Data Module
-===============================
+AIMS Framework - Federated Learning Data Module
+================================================
 
-Handles data loading from the pre-processed ITS dataset (raw_full.csv),
+Handles data loading, preprocessing (reusing AIMS pipeline), feature preparation,
 StandardScaler normalization, and IID/Non-IID partitioning for FL clients.
-
-The dataset contains 5,093 samples with 29 features + 1 target (impact_level)
-already one-hot encoded and feature-engineered.
 """
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 from typing import Dict, List, Tuple
 
@@ -20,95 +18,85 @@ import numpy as np
 import pandas as pd
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
-from sklearn.utils.class_weight import compute_class_weight
+
+# Add parent directory to path so we can import AIMS modules
+_CODE_DIR = Path(__file__).resolve().parent.parent
+if str(_CODE_DIR) not in sys.path:
+    sys.path.insert(0, str(_CODE_DIR))
+
+import preprocess_dataset as pp
+from impact_labeling import label_weighted_average
 
 from .fl_config import NON_IID_ALLOCATION
-
-
-# Numeric columns to scale (non-OHE features)
-NUMERIC_COLS = [
-    'rec_serv', 'env_car', 'rtt', 'ncars', 'pdr', 'bc_rtt',
-    'rtt_change', 'pdr_change', 'rtt_mam', 'pdr_mam', 'rtt_masd',
-    'log_rtt', 'log_pdr', 'log2_rtt', 'log2_pdr', 'rtt_sqrd', 'pdr_sqrd',
-]
 
 
 def load_and_prepare(
     csv_path: Path,
     random_state: int = 42,
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, Dict[int, float], List[str]]:
+) -> Tuple[np.ndarray, np.ndarray, Dict[int, float], List[str]]:
     """
-    Load the ITS dataset, normalize labels, scale features, and split into
-    global train/test sets.
+    Load the AIMS dataset, apply preprocessing and impact labeling,
+    then prepare numeric features for neural network training.
+
+    Uses the same preprocessing pipeline as the traditional AIMS models
+    (prepare_dataset + label_weighted_average) to ensure consistency.
 
     Parameters
     ----------
     csv_path : Path
-        Path to raw_full.csv.
+        Path to the AIMS CSV dataset.
     random_state : int
         Random seed for reproducibility.
 
     Returns
     -------
-    X_train : np.ndarray
-        Scaled training feature matrix (float32).
-    X_test : np.ndarray
-        Scaled test feature matrix (float32).
-    y_train : np.ndarray
-        Training labels (0=Low, 1=Medium, 2=High).
-    y_test : np.ndarray
-        Test labels.
+    X : np.ndarray
+        Scaled feature matrix (float32).
+    y : np.ndarray
+        Impact labels (0-3).
     class_weight_dict : dict
         Class weights for imbalanced learning.
     feature_names : list[str]
-        Names of the features.
+        Names of the features in X.
     """
-    # Step 1: Load
-    df = pd.read_csv(csv_path)
-    print(f"  Loaded dataset: {len(df)} samples, {len(df.columns)} columns")
+    # Step 1: Load raw data
+    raw_df = pd.read_csv(csv_path)
+    print(f"  Loaded dataset: {len(raw_df)} samples, {len(raw_df.columns)} columns")
 
-    # Step 2: Normalize labels to integers
-    if df['impact_level'].dtype == object:
-        df['impact_level'] = df['impact_level'].map({'low': 0, 'medium': 1, 'high': 2})
-    df['impact_level'] = df['impact_level'].astype(int)
+    # Step 2: Apply AIMS preprocessing (same as RF/CatBoost/TabNet)
+    processed_df = pp.prepare_dataset(raw_df)
 
-    # Step 3: Separate features and labels
-    drop_cols = ['time', 'impact_level']
-    features = df.drop(columns=[c for c in drop_cols if c in df.columns])
-    labels = df['impact_level']
-
-    print(f"  Impact label distribution: {labels.value_counts().sort_index().to_dict()}")
-
-    features = features.astype('float32')
-    feature_names = list(features.columns)
-
-    # Step 4: Split FIRST, then scale (avoid data leakage)
-    X_train, X_test, y_train, y_test = train_test_split(
-        features, labels, test_size=0.2, random_state=random_state, stratify=labels,
+    # Step 3: Apply impact labeling (4 levels: 0-3)
+    labeled_df, X_df, y, groups, class_weights_array, class_weight_dict = (
+        label_weighted_average(processed_df)
     )
+    print(f"  Impact label distribution: {pd.Series(y).value_counts().sort_index().to_dict()}")
 
-    # Step 5: Scale numeric columns (fit on train only)
-    num_cols = [c for c in NUMERIC_COLS if c in X_train.columns]
-    if num_cols:
-        scaler = StandardScaler()
-        X_train[num_cols] = scaler.fit_transform(X_train[num_cols].astype(float))
-        X_test[num_cols] = scaler.transform(X_test[num_cols].astype(float))
+    # Step 4: Select and prepare features for neural networks
+    # Drop non-predictive columns that are identifiers or metadata
+    drop_cols = [
+        "group_id", "time_block", "source_file", "svc_profile",
+        "throughput_bps", "impact_label",
+    ]
+    X_df = X_df.drop(columns=[c for c in drop_cols if c in X_df.columns], errors="ignore")
 
-    # Convert to numpy
-    X_train = X_train.values.astype('float32')
-    X_test = X_test.values.astype('float32')
-    y_train = y_train.values.astype(int)
-    y_test = y_test.values.astype(int)
+    # One-hot encode categorical columns
+    cat_cols = [c for c in ["app_id", "approach", "category"] if c in X_df.columns]
+    if cat_cols:
+        X_df = pd.get_dummies(X_df, columns=cat_cols, drop_first=False, dtype=float)
 
-    # Compute class weights
-    classes = np.unique(y_train)
-    weights = compute_class_weight('balanced', classes=classes, y=y_train)
-    class_weight_dict = dict(zip(classes.tolist(), weights.tolist()))
+    # Ensure all columns are numeric
+    X_df = X_df.apply(pd.to_numeric, errors="coerce").fillna(0.0)
 
-    print(f"  Global split: {len(X_train)} train, {len(X_test)} test")
-    print(f"  Feature matrix: {X_train.shape[1]} features")
+    feature_names = list(X_df.columns)
 
-    return X_train, X_test, y_train, y_test, class_weight_dict, feature_names
+    # Step 5: Scale features
+    scaler = StandardScaler()
+    X = scaler.fit_transform(X_df.values).astype("float32")
+    y = y.astype(int)
+
+    print(f"  Final feature matrix: {X.shape[0]} samples, {X.shape[1]} features")
+    return X, y, class_weight_dict, feature_names
 
 
 def partition_iid(
@@ -200,6 +188,7 @@ def partition_non_iid(
             frac = allocation[c, cls_idx]
             count = int(round(frac * n))
             if c == num_clients - 1:
+                # Last client gets the remainder
                 end = n
             else:
                 end = min(start + count, n)

@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-ITS FL Framework - Federated Learning Package
-===============================================
+AIMS Framework - Federated Learning Package
+=============================================
 
-Provides federated learning capabilities for the ITS network slicing
+Provides federated learning capabilities for the AIMS network slicing
 impact classification framework, supporting DNN, LSTM, and GRU models
 with FedAvg, FedProx, Krum, and Trimmed Mean aggregation strategies
 over IID and Non-IID data distributions.

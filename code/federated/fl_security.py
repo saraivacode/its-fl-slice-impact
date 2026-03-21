@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-ITS FL Framework - Security Module (Poisoning Attacks)
-======================================================
+AIMS Framework - Security Module (Poisoning Attacks)
+=====================================================
 
 Implements label-flipping attacks and gradient scaling for FL poisoning
-vulnerability assessment (Chapter 10).
+vulnerability assessment.
 
 Attack Model:
-- Label-flip: High(2) -> Low(0) directed poisoning
+- Label-flip: Critical(3) -> Adequate(0) directed poisoning
 - Gradient scaling: amplify malicious update by scale_factor before aggregation
 
-In the ITS context, High->Low flipping suppresses lifecycle decisions:
-the model learns to classify degraded slices as adequate.
+In the ITS context, Critical->Adequate flipping suppresses lifecycle decisions:
+the model learns to classify severely degraded slices as adequate.
 """
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ import numpy as np
 def apply_label_flip_attack(
     y_train: np.ndarray,
     fraction: float,
-    source_class: int = 2,
+    source_class: int = 3,
     target_class: int = 0,
     seed: int = 42,
 ) -> tuple:
@@ -37,9 +37,9 @@ def apply_label_flip_attack(
     fraction : float
         Fraction of source_class labels to flip (0, 1].
     source_class : int
-        Class to flip from (default: 2 = High).
+        Class to flip from (default: 3 = Critical).
     target_class : int
-        Class to flip to (default: 0 = Low).
+        Class to flip to (default: 0 = Adequate).
     seed : int
         Random seed.
 

@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-ITS FL Framework - Federated Learning Configuration
-====================================================
+AIMS Framework - Federated Learning Configuration
+==================================================
 
-Centralized configuration constants for all FL experiments,
-adapted from the AIMS FL framework for ITS network slicing
-impact classification (3 classes: Low, Medium, High).
+Centralized configuration constants for all FL experiments.
+Extends the AIMS FL module with security experiment support
+(label-flip attacks, gradient scaling, Byzantine-robust defenses).
 """
 
 from dataclasses import dataclass, field
@@ -21,8 +21,8 @@ class FLDefaults:
 
     # FL topology
     NUM_CLIENTS: int = 3
-    NUM_ROUNDS: int = 10
-    LOCAL_EPOCHS: int = 5
+    NUM_ROUNDS: int = 30
+    LOCAL_EPOCHS: int = 3
     BATCH_SIZE: int = 32
 
     # Aggregation strategies
@@ -44,15 +44,15 @@ class FLDefaults:
     RNN_UNITS_1: int = 64
     RNN_UNITS_2: int = 32
 
-    # Classification (3 classes for ITS impact)
-    NUM_CLASSES: int = 3
+    # Classification (4 classes for AIMS impact)
+    NUM_CLASSES: int = 4
     CLASS_NAMES: List[str] = field(
-        default_factory=lambda: ["Low", "Medium", "High"]
+        default_factory=lambda: ["Adequate", "Warning", "Severe", "Critical"]
     )
 
     # Centralized baseline
-    CENTRALIZED_EPOCHS: int = 30
-    EARLY_STOPPING_PATIENCE: int = 5
+    CENTRALIZED_EPOCHS: int = 50
+    EARLY_STOPPING_PATIENCE: int = 10
 
     # Reproducibility
     RANDOM_STATE: int = 42
@@ -88,16 +88,11 @@ class ExperimentConfig:
         return base
 
 
-# Non-IID allocation matrix: rows = clients, cols = classes (Low=0, Medium=1, High=2)
+# Non-IID allocation matrix: rows = clients, cols = classes (0,1,2,3)
 # Each column sums to 1.0 -> all data used, no loss.
-#
-# Based on experimental logs, congestion propagates sequentially:
-#   RSU 0 (last to congest): saturated conditions -> 55% HIGH
-#   RSU 1 (middle point): mixed conditions -> 50% MEDIUM
-#   RSU 2 (entry point): pre-congestion -> 55% LOW
 NON_IID_ALLOCATION = np.array([
-    [0.15, 0.25, 0.55],   # Client 0: high-impact heavy (downstream, saturated)
-    [0.30, 0.50, 0.25],   # Client 1: medium-impact heavy (middle, mixed)
-    [0.55, 0.25, 0.20],   # Client 2: low-impact heavy (entry, pre-congestion)
+    [0.55, 0.30, 0.10, 0.05],   # Client 0: primarily Adequate + Warning
+    [0.15, 0.40, 0.40, 0.15],   # Client 1: primarily Warning + Severe
+    [0.30, 0.30, 0.50, 0.80],   # Client 2: primarily Severe + Critical
 ])
-# Note: columns sum to [1.0, 1.0, 1.0]
+# Note: columns sum to [1.0, 1.0, 1.0, 1.0]

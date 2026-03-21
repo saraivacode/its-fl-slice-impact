@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-ITS FL Framework - Visualizations
+AIMS Framework - Federated Learning Visualizations
 ===================================
 
 Generates convergence plots, strategy comparisons, FL vs centralized
@@ -164,7 +164,7 @@ def plot_client_distribution(
     partitions: List[tuple],
     distribution: str,
     output_dir: Path,
-    num_classes: int = 3,
+    num_classes: int = 4,
 ) -> Path:
     """Stacked bar chart showing class distribution across FL clients."""
     class_names = _DEFAULTS.CLASS_NAMES[:num_classes]

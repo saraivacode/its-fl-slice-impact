@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-ITS FL Framework - Neural Network Models
-==========================================
+AIMS Framework - Federated Learning Neural Network Models
+==========================================================
 
-Defines DNN, LSTM, and GRU model builders using Keras/TensorFlow
-for ITS 3-class impact classification (Low, Medium, High).
+Defines DNN, LSTM, and GRU model builders using Keras/TensorFlow,
+adapted from the reference FL script for the AIMS 4-class impact
+classification task.
 """
 
 from __future__ import annotations
@@ -39,7 +40,7 @@ def configure_tf():
         print("  TF running on CPU.")
 
 
-def build_dnn(input_dim: int, num_classes: int = 3) -> tf.keras.Model:
+def build_dnn(input_dim: int, num_classes: int = 4) -> tf.keras.Model:
     """
     Build a Dense feedforward network for tabular classification.
 
@@ -63,7 +64,7 @@ def build_dnn(input_dim: int, num_classes: int = 3) -> tf.keras.Model:
     return model
 
 
-def build_lstm(input_dim: int, num_classes: int = 3) -> tf.keras.Model:
+def build_lstm(input_dim: int, num_classes: int = 4) -> tf.keras.Model:
     """
     Build an LSTM network for sequential feature processing.
 
@@ -86,7 +87,7 @@ def build_lstm(input_dim: int, num_classes: int = 3) -> tf.keras.Model:
     return model
 
 
-def build_gru(input_dim: int, num_classes: int = 3) -> tf.keras.Model:
+def build_gru(input_dim: int, num_classes: int = 4) -> tf.keras.Model:
     """
     Build a GRU network as an efficient LSTM alternative.
 
@@ -108,7 +109,7 @@ def build_gru(input_dim: int, num_classes: int = 3) -> tf.keras.Model:
     return model
 
 
-def create_model(model_type: str, input_dim: int, num_classes: int = 3) -> tf.keras.Model:
+def create_model(model_type: str, input_dim: int, num_classes: int = 4) -> tf.keras.Model:
     """
     Factory function to create a neural network model.
 

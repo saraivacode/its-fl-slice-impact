@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-ITS FL Framework - Centralized Training Baselines
+AIMS Framework - Centralized Training Baselines for FL Comparison
 ===================================================
 
 Trains the same DNN/LSTM/GRU models in centralized mode (no federation)

@@ -5,8 +5,8 @@ Enhanced Federated Learning for ITS Network Slicing Impact Classification
 
 This script is the entry point for the federated learning framework that
 classifies the impact level of network slicing policies on ITS applications.
-The classification target (impact_level: low/medium/high) indicates how
-network conditions affect application requirements.
+The classification target (impact_level: Adequate/Warning/Severe/Critical)
+indicates how network conditions affect application requirements.
 
 Based on the AIMS FL framework (modular federated/ package), extended with:
 - Byzantine-robust aggregation: Krum, Trimmed Mean
