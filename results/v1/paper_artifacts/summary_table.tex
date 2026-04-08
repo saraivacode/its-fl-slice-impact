@@ -1,21 +1,10 @@
-\begin{tabular}{llllllllll}
+\begin{tabular}{lllllllllll}
 \toprule
-Model & Dist & Strategy & Acc & F1 & @85% & @90% & σ & Avg Train & Total \\
+Model & Distribution & Strategy & Accuracy & Precision & Recall & F1-Macro & @85% & @90% & Stability & Time (s) \\
 \midrule
-DNN & IID & FEDAVG & 0.9784 & 0.9788 & 1 & 1 & 0.0022 & 4.08s & 108.8s \\
-DNN & IID & FEDPROX & 0.9765 & 0.9766 & 1 & 1 & 0.0027 & 4.29s & 98.5s \\
-DNN & NONIID & FEDAVG & 0.7647 & 0.7518 & - & - & 0.0036 & 3.81s & 90.8s \\
-DNN & NONIID & FEDPROX & 0.7657 & 0.7535 & - & - & 0.0039 & 4.28s & 95.7s \\
-LSTM & IID & FEDAVG & 0.9794 & 0.9797 & 1 & 1 & 0.0023 & 5.90s & 112.3s \\
-LSTM & IID & FEDPROX & 0.9794 & 0.9800 & 1 & 1 & 0.0024 & 6.53s & 115.8s \\
-LSTM & NONIID & FEDAVG & 0.7824 & 0.7766 & - & - & 0.0007 & 6.04s & 114.0s \\
-LSTM & NONIID & FEDPROX & 0.7843 & 0.7789 & - & - & 0.0018 & 6.67s & 117.9s \\
-GRU & IID & FEDAVG & 0.9814 & 0.9817 & 1 & 1 & 0.0018 & 5.72s & 109.2s \\
-GRU & IID & FEDPROX & 0.9784 & 0.9786 & 1 & 1 & 0.0016 & 6.17s & 115.7s \\
-GRU & NONIID & FEDAVG & 0.7784 & 0.7722 & - & - & 0.0020 & 5.65s & 106.7s \\
-GRU & NONIID & FEDPROX & 0.7784 & 0.7726 & - & - & 0.0024 & 5.96s & 110.7s \\
-DNN & CENTRAL & - & 0.9755 & 0.9771 & - & - & - & - & 19.2s \\
-LSTM & CENTRAL & - & 0.9784 & 0.9841 & - & - & - & - & 41.6s \\
-GRU & CENTRAL & - & 0.9882 & 0.9888 & - & - & - & - & 38.9s \\
+DNN & IID & FEDAVG & 0.9231 & 0.9053 & 0.9307 & 0.9171 & 1 & 3 & 0.0042 & 43.9 \\
+DNN & NONIID & FEDAVG & 0.9093 & 0.8988 & 0.9207 & 0.9065 & 1 & 5 & 0.0042 & 47.7 \\
+DNN & NONIID & FEDPROX & 0.9056 & 0.8956 & 0.9158 & 0.9015 & 1 & 6 & 0.0026 & 50.6 \\
+DNN & CENTRAL & - & 0.9241 & 0.9090 & 0.9327 & 0.9191 & - & - & - & 7.6 \\
 \bottomrule
 \end{tabular}
